@@ -1,0 +1,48 @@
+plugins {
+    id 'com.gradleup.shadow' version '9.6.1' apply false
+}
+
+group = 'ru.privatenull'
+version = '1.0.0'
+
+allprojects {
+    repositories {
+        mavenCentral()
+        maven {
+            name = 'bungee'
+            url = uri('https://repo.md-5.net/content/repositories/snapshots/')
+        }
+        maven {
+            name = 'velocity'
+            url = uri('https://repo.papermc.io/repository/maven-public/')
+        }
+    }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    group = rootProject.group
+    version = rootProject.version
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        withSourcesJar()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 17
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+}
+
+tasks.register('dist', Sync) {
+    dependsOn ':shared:test', ':plugin:shadowJar'
+    from(project(':plugin').tasks.named('shadowJar'))
+    into layout.buildDirectory.dir('dist')
+}

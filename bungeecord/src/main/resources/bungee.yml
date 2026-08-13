@@ -1,0 +1,5 @@
+name: pnAuth
+main: ru.privatenull.pnauth.bungee.PnAuthBungeePlugin
+version: '${version}'
+author: privatenull
+description: Shared authentication plugin for BungeeCord and Velocity.

@@ -1,0 +1,37 @@
+# Gradle
+.gradle/
+**/build/
+
+# IDE and local tooling
+.idea/
+.junie/
+*.iml
+.vscode/
+
+# Runtime data and secrets
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.key
+.env
+.env.*
+/config.yml
+/messages/
+/limbo/
+
+# Native and downloaded runtime artifacts
+*.dll
+*.so
+*.dylib
+pico_limbo_java_wrapper.jar
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+hs_err_pid*
+
+# Operating systems
+.DS_Store
+Thumbs.db

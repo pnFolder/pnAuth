@@ -1,0 +1,57 @@
+plugins {
+    id 'com.gradleup.shadow'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = [
+                    file('../bungeecord/src/main/java'),
+                    file('../velocity/src/main/java')
+            ]
+        }
+        resources {
+            srcDirs = [file('../bungeecord/src/main/resources')]
+        }
+    }
+}
+
+dependencies {
+    compileOnly 'net.md-5:bungeecord-api:1.21-R0.3'
+    compileOnly 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    annotationProcessor 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    implementation project(':shared')
+    implementation 'net.kyori:adventure-text-minimessage:4.17.0'
+    implementation 'net.kyori:adventure-text-serializer-bungeecord:4.4.1'
+}
+
+tasks.named('jar') {
+    archiveClassifier = 'plain'
+}
+
+tasks.named('shadowJar') {
+    archiveFileName = "pnAuth-${project.version}.jar"
+    archiveClassifier = ''
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+    relocate 'org.yaml.snakeyaml', 'ru.privatenull.pnauth.libs.snakeyaml'
+    relocate 'net.elytrium.serializer', 'ru.privatenull.pnauth.libs.serializer'
+    manifest {
+        attributes(
+                'Implementation-Title': 'pnAuth',
+                'Implementation-Version': project.version,
+                'Implementation-Vendor': 'privatenull'
+        )
+    }
+}
+
+processResources {
+    filteringCharset = 'UTF-8'
+    filesMatching('bungee.yml') {
+        expand(version: project.version)
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('shadowJar')
+}
