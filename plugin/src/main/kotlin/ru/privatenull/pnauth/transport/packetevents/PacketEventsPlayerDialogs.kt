@@ -56,7 +56,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     override fun supported(player: PnPlayer): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
         return packets.playerManager.getClientVersion(nativeValue)
-            .isNewerThanOrEquals(ClientVersion.V_1_21_6)
+            .isNewerThanOrEquals(ClientVersion.V_1_21_4)
     }
 
     override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {

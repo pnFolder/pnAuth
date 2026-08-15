@@ -7,8 +7,10 @@ class PicoLimboProvider : LimboServerProvider {
 
     override fun create(context: LimboServerContext): LimboServer {
         val store = PicoLimboConfigStore()
-        val configFile = context.dataDirectory.resolve("pico_limbo.toml")
+        val limboFolder = context.dataDirectory.resolve("limbo")
+        Files.createDirectories(limboFolder)
+        val configFile = limboFolder.resolve("pico_limbo.toml")
         val config = if (Files.exists(configFile)) store.load(configFile) else PicoLimboConfig()
-        return PicoLimboServer(context.dataDirectory, context.dataDirectory, context.settings, config)
+        return PicoLimboServer(limboFolder, limboFolder, context.settings, config)
     }
 }

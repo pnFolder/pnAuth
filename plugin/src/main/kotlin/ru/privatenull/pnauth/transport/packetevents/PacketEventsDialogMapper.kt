@@ -117,7 +117,7 @@ object PacketEventsDialogMapper {
                     else PlainMessage(body.description!!, body.descriptionWidth)
                     result.add(
                         ItemDialogBody(
-                            ItemStack.decode(compound(body.itemStack), ClientVersion.V_1_21_6),
+                            ItemStack.decode(compound(body.itemStack), ClientVersion.V_1_21_4),
                             description,
                             body.showDecorations,
                             body.showTooltip,
