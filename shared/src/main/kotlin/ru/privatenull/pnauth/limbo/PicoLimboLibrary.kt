@@ -146,26 +146,5 @@ internal object PicoLimboLibrary {
         fun get_cancellation_token(): Pointer
 
         fun cleanup_token(token: Pointer)
-
-        fun pico_embedding_api_version(): Int
-
-        fun pico_player_is_connected(token: Pointer, playerUuid: String): Int
-
-        fun pico_bossbar_add(
-            token: Pointer, playerUuid: String, barUuid: String, title: String,
-            progress: Float, color: Int, overlay: Int
-        ): Int
-
-        fun pico_bossbar_progress(token: Pointer, playerUuid: String, barUuid: String, progress: Float): Int
-
-        fun pico_bossbar_title(token: Pointer, playerUuid: String, barUuid: String, title: String): Int
-
-        fun pico_bossbar_remove(token: Pointer, playerUuid: String, barUuid: String): Int
-
-        fun pico_dialog_show_json(token: Pointer, playerUuid: String, dialogJson: String): Int
-
-        fun pico_dialog_clear(token: Pointer, playerUuid: String): Int
-
-        fun pico_dialog_poll_event(token: Pointer, buffer: ByteArray, bufferLength: Long): Int
     }
 }

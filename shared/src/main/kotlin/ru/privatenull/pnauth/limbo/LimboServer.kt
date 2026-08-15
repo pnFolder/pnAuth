@@ -1,7 +1,5 @@
 package ru.privatenull.pnauth.limbo
 
-import java.util.Optional
-
 interface LimboServer : AutoCloseable {
     fun id(): String
 
@@ -10,8 +8,6 @@ interface LimboServer : AutoCloseable {
     fun port(): Int
 
     fun state(): LimboServerState
-
-    fun control(): Optional<LimboControl> = Optional.empty()
 
     fun start()
 
