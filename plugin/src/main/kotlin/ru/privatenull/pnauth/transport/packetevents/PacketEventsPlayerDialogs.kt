@@ -4,6 +4,11 @@ import com.github.retrooper.packetevents.PacketEvents
 import com.github.retrooper.packetevents.event.PacketListenerAbstract
 import com.github.retrooper.packetevents.event.PacketListenerCommon
 import com.github.retrooper.packetevents.event.PacketReceiveEvent
+import com.github.retrooper.packetevents.protocol.dialog.CommonDialogData
+import com.github.retrooper.packetevents.protocol.dialog.NoticeDialog
+import com.github.retrooper.packetevents.protocol.dialog.body.PlainMessage
+import com.github.retrooper.packetevents.protocol.dialog.button.ActionButton
+import com.github.retrooper.packetevents.protocol.dialog.button.CommonButtonData
 import com.github.retrooper.packetevents.protocol.nbt.NBT
 import com.github.retrooper.packetevents.protocol.nbt.NBTCompound
 import com.github.retrooper.packetevents.protocol.nbt.NBTList
@@ -14,6 +19,7 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCustomClickAction
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerClearDialog
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerShowDialog
+import net.kyori.adventure.text.Component
 import ru.privatenull.pnauth.dialog.DialogAction
 import ru.privatenull.pnauth.dialog.DialogButton
 import ru.privatenull.pnauth.dialog.DialogHandle
@@ -55,9 +61,12 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
 
     override fun supported(player: PnPlayer): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId())
-        return nativeValue != null
-            && packets.playerManager.getClientVersion(nativeValue)
-                .isNewerThanOrEquals(ClientVersion.V_1_21_6)
+        if (nativeValue == null) return false
+        val ver = packets.playerManager.getClientVersion(nativeValue)
+        // UNKNOWN means PacketEvents doesn't recognise the version — future/snapshot clients.
+        // They still receive dialog packets, so treat them as supported.
+        return ver == ClientVersion.UNKNOWN
+            || ver.isNewerThanOrEquals(ClientVersion.V_1_21_6)
     }
 
     override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
@@ -184,24 +193,55 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
         }
     }
 
+    private fun testDialog(player: Any) {
+        try {
+            val dialog = NoticeDialog(
+                CommonDialogData(
+                    Component.text("Test Dialog"),
+                    PlainMessage(
+                        Component.text("Hello from PacketEvents!"),
+                        300
+                    ).contents,
+                    false,
+                    false,
+                    com.github.retrooper.packetevents.protocol.dialog.DialogAction.NONE,
+                    emptyList(),
+                    emptyList()
+                ),
+                ActionButton(
+                    CommonButtonData(
+                        Component.text("OK"),
+                        null,
+                        100
+                    ),
+                    null
+                )
+            )
+
+            packets.playerManager.sendPacket(
+                player,
+                WrapperPlayServerShowDialog(dialog)
+            )
+
+            diagnostics.accept("[pnAuth] testDialog packet sent successfully")
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+    }
+
     private fun sendSafely(player: Any, packet: Any) {
-        diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely: Sending ${packet.javaClass.simpleName} to $player")
         try {
             packets.playerManager.sendPacket(player, packet)
-            diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely: Successfully sent ${packet.javaClass.simpleName}")
         } catch (exception: Throwable) {
-            diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely EXCEPTION sending via playerManager: ${exception.javaClass.simpleName}: ${exception.message}")
             try {
                 val user = packets.protocolManager.getUser(player)
                 if (user != null && packet is com.github.retrooper.packetevents.wrapper.PacketWrapper<*>) {
                     user.sendPacket(packet)
-                    diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely: Successfully sent via fallback user channel")
                     return
                 }
-            } catch (fallbackEx: Throwable) {
-                diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely FALLBACK EXCEPTION: ${fallbackEx.javaClass.simpleName}: ${fallbackEx.message}")
+            } catch (_: Throwable) {
+                // Disconnect may release the PacketEvents channel before the Bungee event fires.
             }
-            diagnostics.accept("[dialogs] Warning: failed to send dialog packet: ${exception.javaClass.simpleName}: ${exception.message}")
         }
     }
 
@@ -229,7 +269,6 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
                     return
                 }
                 event.isCancelled = true
-                diagnostics.accept("[dialogs] Matched response $actionId to player ${handle.playerId()}")
                 handle.accept(actionId, payload)
             } catch (ignored: RuntimeException) {
                 // DialogForm converts application callback failures into its configured error response.

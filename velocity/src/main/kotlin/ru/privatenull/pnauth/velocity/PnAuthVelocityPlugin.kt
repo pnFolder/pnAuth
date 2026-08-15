@@ -157,8 +157,8 @@ class PnAuthVelocityPlugin @Inject constructor(
             migration = authMigration
             val commandService = AuthCommandService(authService, authMessages, velocityActions, authMigration, config.features)
             val vDialogs = VelocityDialogCoordinator(
-                proxy, logger, authService, commandService, authMessages,
-                config.features, config.messageFormat, config.security.maxPasswordLength, proxySettings
+                proxy, authService, commandService, authMessages,
+                config.features, config.messageFormat, config.security.maxPasswordLength, proxySettings, pForm
             )
             dialogs = vDialogs
             val access = AuthAccessService(authService, proxySettings, config.access, authMessages)

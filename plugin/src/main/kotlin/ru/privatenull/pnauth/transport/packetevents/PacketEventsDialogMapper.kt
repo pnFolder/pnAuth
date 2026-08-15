@@ -155,8 +155,8 @@ object PacketEventsDialogMapper {
                     BooleanInputControl(
                         input.label(),
                         input.initialValue,
-                        input.onTrue,
-                        input.onFalse
+                        input.onTrue!!,
+                        input.onFalse!!
                     )
                 }
                 is DialogInput.Choice -> {
@@ -174,7 +174,7 @@ object PacketEventsDialogMapper {
                     NumberRangeInputControl(
                         input.width,
                         input.label(),
-                        input.labelFormat,
+                        input.labelFormat!!,
                         NumberRangeInputControl.RangeInfo(
                             input.start,
                             input.end,
