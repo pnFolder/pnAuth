@@ -85,10 +85,11 @@ class PnAuthBungeePlugin : Plugin() {
                 }
                 try {
                     limbo?.start()
-                    val limboServer = limbo!!
-                    proxy.servers[limboServer.id()] = proxy.constructServerInfo(
-                        limboServer.id(),
-                        InetSocketAddress(limboServer.host(), limboServer.port()),
+                    val createdLimbo = limbo!!
+                    val serverName = config.limbo.serverName
+                    proxy.servers[serverName] = proxy.constructServerInfo(
+                        serverName,
+                        InetSocketAddress(createdLimbo.host(), createdLimbo.port()),
                         "pnAuth authentication limbo", false
                     )
                     proxySettings = proxySettings.requiringServerAuth()

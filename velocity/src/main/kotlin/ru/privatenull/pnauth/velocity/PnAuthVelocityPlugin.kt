@@ -110,14 +110,15 @@ class PnAuthVelocityPlugin @Inject constructor(
                 }
                 try {
                     createdLimbo.start()
+                    val serverName = config.limbo.serverName
                     limboServer = proxy.registerServer(
                         ServerInfo(
-                            createdLimbo.id(), InetSocketAddress(createdLimbo.host(), createdLimbo.port())
+                            serverName, InetSocketAddress(createdLimbo.host(), createdLimbo.port())
                         )
                     )
                     logger.info(
                         "Registered embedded auth route '{}' at {}:{}; authenticated players route to '{}'.",
-                        createdLimbo.id(), createdLimbo.host(), createdLimbo.port(), config.proxy.backendServer
+                        serverName, createdLimbo.host(), createdLimbo.port(), config.proxy.backendServer
                     )
                     proxySettings = proxySettings.requiringServerAuth()
                 } catch (exception: Exception) {
