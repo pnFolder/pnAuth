@@ -57,7 +57,8 @@ class PicoLimboServer(
                 thread.isDaemon = true
                 thread
             }
-            val arguments = arrayOf("pico_limbo", "--config-dir", limboConfigDirectory.toAbsolutePath().toString())
+            val configFile = limboConfigDirectory.resolve("pico_limbo.toml").toAbsolutePath().toString()
+            val arguments = arrayOf("pico_limbo", "--config", configFile)
 
             val startupFuture = CompletableFuture.runAsync({
                 api.start_app(token, arguments.size, arguments)
