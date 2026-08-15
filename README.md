@@ -174,20 +174,6 @@ Only field names such as `code` are public application data. Dialog IDs, button 
 connection ownership checks and PacketEvents NBT routing remain internal to pnAuth. Use the
 lower-level `PlayerDialog` API only when an extension needs an exact vanilla dialog structure.
 
-Minecraft server links have a dedicated high-level builder. It renders links already supplied to
-the client through the server-links packet; pnAuth generates the dialog and exit action IDs:
-
-```java
-ServerLinksForm links = ServerLinksForm.builder(Component.text("Server links"))
-        .body(Component.text("Official resources"), 400)
-        .columns(2)
-        .buttonWidth(200)
-        .exitButton(Component.text("Close"), response ->
-                player.sendMessage(Component.text("Links closed.")))
-        .build();
-
-DialogHandle handle = player.dialogs().show(player, links);
-```
 
 Платформонезависимый API и вся прикладная логика находятся в модуле `shared`. BungeeCord и Velocity являются тонкими адаптерами: они преобразуют события прокси во входные модели ядра и применяют готовые решения маршрутизации/доступа.
 

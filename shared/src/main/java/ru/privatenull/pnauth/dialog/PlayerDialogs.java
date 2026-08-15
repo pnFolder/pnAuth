@@ -14,10 +14,6 @@ public interface PlayerDialogs {
         return form.show(this, player);
     }
 
-    /** Opens a high-level view of the links supplied through Minecraft's server-links packet. */
-    default DialogHandle show(PnPlayer player, ServerLinksForm form) {
-        return form.show(this, player);
-    }
     Optional<DialogHandle> find(UUID playerId, String dialogId);
     boolean close(UUID playerId, String dialogId);
     void closeAll(UUID playerId);
