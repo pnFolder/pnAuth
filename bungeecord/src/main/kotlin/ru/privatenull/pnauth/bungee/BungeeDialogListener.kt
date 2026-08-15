@@ -93,6 +93,7 @@ class BungeeDialogListener internal constructor(
         cancel(player.uniqueId)
         coordinator.clear(player.uniqueId)
         val deadline = System.currentTimeMillis() + 30_000L
+        var attempts = 0
         val task = plugin.proxy.scheduler.schedule(plugin, {
             if (!player.isConnected) {
                 cancel(player.uniqueId)
@@ -100,7 +101,7 @@ class BungeeDialogListener internal constructor(
             }
             val status = auth.status(player.uniqueId)
             val server = player.server
-            plugin.logger.info("[pnAuth-DEBUG] scheduleWhenLoaded tick: player=${player.name}, status=$status, server=${server?.info?.name}, configuredAuthServer=${settings.authServer}")
+            plugin.logger.info("[pnAuth-DEBUG] scheduleWhenLoaded tick: player=${player.name}, attempts=$attempts, status=$status, server=${server?.info?.name}, configuredAuthServer=${settings.authServer}")
             if (status == AuthStatus.NOT_LOADED || server == null
                 || !server.info.name.equals(settings.authServer, ignoreCase = true)
             ) {
@@ -110,25 +111,32 @@ class BungeeDialogListener internal constructor(
                 }
                 return@schedule
             }
-            cancel(player.uniqueId)
-            if (status == AuthStatus.AUTHENTICATED) return@schedule
+            if (status == AuthStatus.AUTHENTICATED) {
+                cancel(player.uniqueId)
+                return@schedule
+            }
+            attempts++
             val protocol = player.pendingConnection.version
             val passwordStage = status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED
             try {
-                plugin.logger.info("[pnAuth-DEBUG] Calling coordinator.show for ${player.name}, status=$status, protocol=$protocol")
+                plugin.logger.info("[pnAuth-DEBUG] Calling coordinator.show (attempt $attempts) for ${player.name}, status=$status, protocol=$protocol")
                 val shown = coordinator.show(player.uniqueId, status, protocol)
                 plugin.logger.info("[pnAuth-DEBUG] coordinator.show result for ${player.name}: $shown")
                 if (!shown) {
+                    cancel(player.uniqueId)
                     sendCommandFallback(player, status, protocol, passwordStage)
+                } else if (attempts >= 3) {
+                    cancel(player.uniqueId)
                 }
             } catch (exception: RuntimeException) {
+                cancel(player.uniqueId)
                 plugin.logger.warning(
                     "Could not show authentication UI for ${player.name}; falling back to commands: ${exception.message}"
                 )
                 exception.printStackTrace()
                 sendCommandFallback(player, status, protocol, passwordStage)
             }
-        }, 100, 100, TimeUnit.MILLISECONDS)
+        }, 500, 1000, TimeUnit.MILLISECONDS)
         pending[player.uniqueId] = task
     }
 
