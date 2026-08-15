@@ -56,8 +56,11 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     override fun supported(player: PnPlayer): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
         val version = packets.playerManager.getClientVersion(nativeValue)
-        if (version == ClientVersion.UNKNOWN) return true
-        return version.isNewerThanOrEquals(ClientVersion.V_1_21_4)
+        if (version != ClientVersion.UNKNOWN && version.isNewerThanOrEquals(ClientVersion.V_1_21_4)) {
+            return true
+        }
+        val protocol = platformProtocolVersion(nativeValue)
+        return protocol >= 771
     }
 
     override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
@@ -237,6 +240,22 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     }
 
     companion object {
+        private fun platformProtocolVersion(player: Any?): Int {
+            if (player == null) return 0
+            return try {
+                val pendingConnection = player.javaClass.getMethod("getPendingConnection").invoke(player)
+                val version = pendingConnection.javaClass.getMethod("getVersion").invoke(pendingConnection)
+                if (version is Number) version.toInt() else 0
+            } catch (ignored: Exception) {
+                try {
+                    val protocolVersion = player.javaClass.getMethod("getProtocolVersion").invoke(player)
+                    if (protocolVersion is Number) protocolVersion.toInt() else 0
+                } catch (ignored2: Exception) {
+                    0
+                }
+            }
+        }
+
         private fun platformPlayerId(player: Any?): UUID? {
             if (player == null) return null
             return try {
