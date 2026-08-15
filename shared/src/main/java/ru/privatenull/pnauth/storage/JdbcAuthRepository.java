@@ -94,6 +94,38 @@ public final class JdbcAuthRepository implements AuthRepository {
     }
 
     @Override
+    public boolean reassignUniqueId(UUID previousUniqueId, UUID currentUniqueId) {
+        if (previousUniqueId.equals(currentUniqueId)) return true;
+        try (Connection connection = open()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement account = connection.prepareStatement(
+                    "UPDATE pnauth_users SET uuid = ? WHERE uuid = ?");
+                 PreparedStatement recovery = connection.prepareStatement(
+                    "UPDATE pnauth_recovery_codes SET uuid = ? WHERE uuid = ?")) {
+                account.setString(1, currentUniqueId.toString());
+                account.setString(2, previousUniqueId.toString());
+                if (account.executeUpdate() != 1) {
+                    connection.rollback();
+                    return false;
+                }
+                recovery.setString(1, currentUniqueId.toString());
+                recovery.setString(2, previousUniqueId.toString());
+                recovery.executeUpdate();
+                connection.commit();
+                return true;
+            } catch (SQLException exception) {
+                connection.rollback();
+                if (isConstraintViolation(exception)) return false;
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not reassign auth account UUID", exception);
+        }
+    }
+
+    @Override
     public void updateLastLogin(UUID uniqueId, long timestamp) {
         executeUpdate("UPDATE pnauth_users SET last_login_at = ? WHERE uuid = ?", statement -> {
             statement.setLong(1, timestamp);
@@ -177,8 +209,26 @@ public final class JdbcAuthRepository implements AuthRepository {
 
     @Override
     public void deleteByUniqueId(UUID uniqueId) {
-        executeUpdate("DELETE FROM pnauth_users WHERE uuid = ?", statement -> statement.setString(1, uniqueId.toString()));
-        executeUpdate("DELETE FROM pnauth_recovery_codes WHERE uuid = ?", statement -> statement.setString(1, uniqueId.toString()));
+        try (Connection connection = open()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement account = connection.prepareStatement(
+                    "DELETE FROM pnauth_users WHERE uuid = ?");
+                 PreparedStatement recovery = connection.prepareStatement(
+                    "DELETE FROM pnauth_recovery_codes WHERE uuid = ?")) {
+                account.setString(1, uniqueId.toString());
+                account.executeUpdate();
+                recovery.setString(1, uniqueId.toString());
+                recovery.executeUpdate();
+                connection.commit();
+            } catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not delete auth account", exception);
+        }
     }
 
     @Override
@@ -204,6 +254,63 @@ public final class JdbcAuthRepository implements AuthRepository {
             return statement.executeUpdate() > 0;
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not consume recovery code", exception);
+        }
+    }
+
+    @Override
+    public void replaceTotpData(UUID uniqueId, String encryptedSecret, List<String> recoveryCodeHashes) {
+        try (Connection connection = open()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement secret = connection.prepareStatement(
+                    "UPDATE pnauth_users SET totp_secret = ? WHERE uuid = ?");
+                 PreparedStatement clear = connection.prepareStatement(
+                    "DELETE FROM pnauth_recovery_codes WHERE uuid = ?");
+                 PreparedStatement add = connection.prepareStatement(
+                    "INSERT INTO pnauth_recovery_codes (uuid, code_hash) VALUES (?, ?)")) {
+                secret.setString(1, encryptedSecret);
+                secret.setString(2, uniqueId.toString());
+                secret.executeUpdate();
+                clear.setString(1, uniqueId.toString());
+                clear.executeUpdate();
+                for (String codeHash : recoveryCodeHashes) {
+                    add.setString(1, uniqueId.toString());
+                    add.setString(2, codeHash);
+                    add.addBatch();
+                }
+                add.executeBatch();
+                connection.commit();
+            } catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not replace TOTP data", exception);
+        }
+    }
+
+    @Override
+    public void clearTotpData(UUID uniqueId) {
+        try (Connection connection = open()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement secret = connection.prepareStatement(
+                    "UPDATE pnauth_users SET totp_secret = NULL WHERE uuid = ?");
+                 PreparedStatement clear = connection.prepareStatement(
+                    "DELETE FROM pnauth_recovery_codes WHERE uuid = ?")) {
+                secret.setString(1, uniqueId.toString());
+                secret.executeUpdate();
+                clear.setString(1, uniqueId.toString());
+                clear.executeUpdate();
+                connection.commit();
+            } catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not clear TOTP data", exception);
         }
     }
 
@@ -289,9 +396,21 @@ public final class JdbcAuthRepository implements AuthRepository {
     private static void addColumn(Statement statement, String definition) {
         try {
             statement.executeUpdate("ALTER TABLE pnauth_users ADD COLUMN " + definition);
-        } catch (SQLException ignored) {
-            // The column already exists on current schemas.
+        } catch (SQLException exception) {
+            if (!isDuplicateColumn(exception)) {
+                throw new IllegalStateException("Could not migrate auth database column: " + definition, exception);
+            }
         }
+    }
+
+    private static boolean isDuplicateColumn(SQLException exception) {
+        String state = exception.getSQLState();
+        if ("42701".equals(state) || "42S21".equals(state) || exception.getErrorCode() == 1060
+                || exception.getErrorCode() == 42121) {
+            return true;
+        }
+        String message = exception.getMessage();
+        return message != null && message.toLowerCase(Locale.ROOT).contains("duplicate column");
     }
 
     private static DialogPreference preference(String value) {

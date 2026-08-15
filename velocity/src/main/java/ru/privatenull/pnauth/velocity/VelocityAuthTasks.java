@@ -6,7 +6,6 @@ import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
-import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.title.Title;
 import ru.privatenull.pnauth.api.AuthApi;
 import ru.privatenull.pnauth.api.AuthStatus;
@@ -14,6 +13,7 @@ import ru.privatenull.pnauth.config.FeatureSettings;
 import ru.privatenull.pnauth.config.ProxySettings;
 import ru.privatenull.pnauth.message.AuthMessages;
 import ru.privatenull.pnauth.message.MessageFormat;
+import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator;
 
 import java.util.Map;
 import java.util.UUID;
@@ -28,10 +28,12 @@ final class VelocityAuthTasks implements AutoCloseable {
     private final FeatureSettings settings;
     private final ProxySettings proxySettings;
     private final MessageFormat messageFormat;
+    private final VelocityDialogCoordinator dialogs;
     private final Map<UUID, TaskPair> tasks = new ConcurrentHashMap<>();
 
     VelocityAuthTasks(Object plugin, ProxyServer proxy, AuthApi auth, AuthMessages messages,
-                      FeatureSettings settings, ProxySettings proxySettings, MessageFormat messageFormat) {
+                      FeatureSettings settings, ProxySettings proxySettings, MessageFormat messageFormat,
+                      VelocityDialogCoordinator dialogs) {
         this.plugin = plugin;
         this.proxy = proxy;
         this.auth = auth;
@@ -39,6 +41,7 @@ final class VelocityAuthTasks implements AutoCloseable {
         this.settings = settings;
         this.proxySettings = proxySettings;
         this.messageFormat = messageFormat;
+        this.dialogs = dialogs;
     }
 
     @Subscribe
@@ -56,6 +59,7 @@ final class VelocityAuthTasks implements AutoCloseable {
                     cancel(player.getUniqueId());
                     return;
                 }
+                if (shouldSuppressCommandReminder(player, status)) return;
                 player.sendMessage(VelocityMessages.component(messages.text(
                         status == AuthStatus.UNREGISTERED ? "reminder.register" : "reminder.login"), messageFormat));
                 if (settings.actionBarEnabled()) {
@@ -65,11 +69,6 @@ final class VelocityAuthTasks implements AutoCloseable {
                     player.showTitle(Title.title(
                             VelocityMessages.component(messages.text("display.title"), messageFormat),
                             VelocityMessages.component(messages.text("display.subtitle"), messageFormat)));
-                }
-                if (settings.bossBarEnabled()) {
-                    player.showBossBar(BossBar.bossBar(
-                            VelocityMessages.component(messages.text("display.bossbar"), messageFormat),
-                            1.0f, BossBar.Color.PURPLE, BossBar.Overlay.PROGRESS));
                 }
             }).delay(reminderSeconds, TimeUnit.SECONDS)
                     .repeat(reminderSeconds, TimeUnit.SECONDS)
@@ -100,6 +99,14 @@ final class VelocityAuthTasks implements AutoCloseable {
             if (pair.reminder != null) pair.reminder.cancel();
             pair.timeout.cancel();
         }
+    }
+
+    private boolean shouldSuppressCommandReminder(Player player, AuthStatus status) {
+        if (status != AuthStatus.UNREGISTERED && status != AuthStatus.UNAUTHENTICATED) return false;
+        int protocol = player.getProtocolVersion().getProtocol();
+        boolean platformSupportsDialogs = dialogs != null && dialogs.available();
+        if (auth.shouldUseDialog(player.getUniqueId(), protocol, platformSupportsDialogs)) return true;
+        return !auth.shouldUseCommandFallback(player.getUniqueId(), protocol, platformSupportsDialogs);
     }
 
     private record TaskPair(ScheduledTask reminder, ScheduledTask timeout) {

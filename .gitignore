@@ -25,6 +25,7 @@
 *.so
 *.dylib
 pico_limbo_java_wrapper.jar
+/plugin/libs/
 
 # Logs and temporary files
 *.log

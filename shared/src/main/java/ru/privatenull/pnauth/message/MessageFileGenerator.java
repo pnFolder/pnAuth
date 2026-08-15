@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -25,18 +26,24 @@ public final class MessageFileGenerator {
         Files.createDirectories(directory);
         String normalized = normalize(locale);
         Path file = directory.resolve("messages_" + normalized + ".yml");
-        Map<String, Object> values = new LinkedHashMap<>(MessageCatalog.defaults(normalized));
-        if (Files.exists(file)) {
-            Map<String, Object> existing = read(file);
-            existing.forEach(values::put);
+        if (Files.notExists(file)) {
+            write(file, MessageCatalog.defaults(normalized));
+        } else {
+            // Parse once to report malformed files at startup, but never re-serialize a
+            // file owned by an administrator. Formatting, comments and unknown keys are
+            // part of that file's contract; missing future keys use built-in fallbacks.
+            read(file);
         }
-        write(file, values);
         return file;
     }
 
     private static Map<String, Object> read(Path file) throws IOException {
         Object root = new Yaml().load(Files.readString(file, StandardCharsets.UTF_8));
         Map<String, Object> flattened = new LinkedHashMap<>();
+        if (root == null) return flattened;
+        if (!(root instanceof Map<?, ?>)) {
+            throw new IOException("Message file root must be a YAML mapping: " + file);
+        }
         flatten("", root, flattened);
         return flattened;
     }
@@ -49,8 +56,18 @@ public final class MessageFileGenerator {
         options.setDefaultScalarStyle(DumperOptions.ScalarStyle.DOUBLE_QUOTED);
         String header = "# pnAuth messages are generated from code defaults.\n"
                 + "# Edit values below. Existing values are preserved when the plugin is updated.\n"
-                + "# New keys are added automatically.\n\n";
-        Files.writeString(file, header + new Yaml(options).dump(unflatten(values)), StandardCharsets.UTF_8);
+                + "# Missing keys use built-in defaults without rewriting this file.\n\n";
+        Path temporary = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
+        try {
+            Files.writeString(temporary, header + new Yaml(options).dump(unflatten(values)), StandardCharsets.UTF_8);
+            try {
+                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
     }
 
     private static Map<String, Object> unflatten(Map<String, Object> values) {

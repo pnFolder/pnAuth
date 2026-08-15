@@ -7,17 +7,24 @@ import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 final class PicoLimboLibrary {
+    private static final int DOWNLOAD_CONNECT_TIMEOUT_MILLIS = 15_000;
+    private static final int DOWNLOAD_READ_TIMEOUT_MILLIS = 30_000;
+    private static final long MAX_DOWNLOAD_BYTES = 128L * 1024 * 1024;
+
     private PicoLimboLibrary() {
     }
 
@@ -34,42 +41,65 @@ final class PicoLimboLibrary {
         if (wrapperChanged || Files.notExists(nativeLibrary)) {
             extractNativeLibrary(wrapper, nativeLibrary);
         }
-        return Native.load(nativeLibrary.toAbsolutePath().toString(), NativeApi.class);
+        return Native.load(nativeLibrary.toAbsolutePath().toString(), NativeApi.class,
+                Map.of(Library.OPTION_STRING_ENCODING, StandardCharsets.UTF_8.name()));
     }
 
     private static void downloadAndVerify(Path target, String url, String expected) throws Exception {
         Path temporary = target.resolveSibling(target.getFileName() + ".download");
-        try (InputStream input = URI.create(url).toURL().openStream()) {
-            Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
-        }
-        String actual = sha256(temporary);
-        if (!actual.equalsIgnoreCase(expected)) {
-            Files.deleteIfExists(temporary);
-            throw new SecurityException("PicoLimbo checksum mismatch");
-        }
         try {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            URLConnection connection = URI.create(url).toURL().openConnection();
+            connection.setConnectTimeout(DOWNLOAD_CONNECT_TIMEOUT_MILLIS);
+            connection.setReadTimeout(DOWNLOAD_READ_TIMEOUT_MILLIS);
+            if (connection.getContentLengthLong() > MAX_DOWNLOAD_BYTES) {
+                throw new IOException("PicoLimbo wrapper exceeds maximum download size");
+            }
+            try (InputStream input = connection.getInputStream();
+                 java.io.OutputStream output = Files.newOutputStream(temporary)) {
+                byte[] buffer = new byte[8192];
+                long downloaded = 0;
+                for (int read; (read = input.read(buffer)) != -1; ) {
+                    downloaded += read;
+                    if (downloaded > MAX_DOWNLOAD_BYTES) {
+                        throw new IOException("PicoLimbo wrapper exceeds maximum download size");
+                    }
+                    output.write(buffer, 0, read);
+                }
+            }
+            String actual = sha256(temporary);
+            if (!actual.equalsIgnoreCase(expected)) {
+                throw new SecurityException("PicoLimbo checksum mismatch");
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
         }
     }
 
     private static void extractNativeLibrary(Path wrapper, Path target) throws Exception {
         String entryName = nativeResourcePath();
         Path temporary = target.resolveSibling(target.getFileName() + ".extract");
-        try (ZipFile zip = new ZipFile(wrapper.toFile())) {
-            ZipEntry entry = zip.getEntry(entryName);
-            if (entry == null) {
-                throw new IllegalStateException("PicoLimbo wrapper does not contain " + entryName);
-            }
-            try (InputStream input = zip.getInputStream(entry)) {
-                Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
-            }
-        }
         try {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            try (ZipFile zip = new ZipFile(wrapper.toFile())) {
+                ZipEntry entry = zip.getEntry(entryName);
+                if (entry == null) {
+                    throw new IllegalStateException("PicoLimbo wrapper does not contain " + entryName);
+                }
+                try (InputStream input = zip.getInputStream(entry)) {
+                    Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
         }
     }
 
@@ -119,5 +149,24 @@ final class PicoLimboLibrary {
         Pointer get_cancellation_token();
 
         void cleanup_token(Pointer token);
+
+        int pico_embedding_api_version();
+
+        int pico_player_is_connected(Pointer token, String playerUuid);
+
+        int pico_bossbar_add(Pointer token, String playerUuid, String barUuid, String title,
+                             float progress, int color, int overlay);
+
+        int pico_bossbar_progress(Pointer token, String playerUuid, String barUuid, float progress);
+
+        int pico_bossbar_title(Pointer token, String playerUuid, String barUuid, String title);
+
+        int pico_bossbar_remove(Pointer token, String playerUuid, String barUuid);
+
+        int pico_dialog_show_json(Pointer token, String playerUuid, String dialogJson);
+
+        int pico_dialog_clear(Pointer token, String playerUuid);
+
+        int pico_dialog_poll_event(Pointer token, byte[] buffer, long bufferLength);
     }
 }

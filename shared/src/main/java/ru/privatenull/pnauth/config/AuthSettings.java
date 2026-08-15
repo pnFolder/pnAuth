@@ -68,7 +68,7 @@ public record AuthSettings(
     }
 
     public static AuthSettings defaults() {
-        return new AuthSettings(6, 64, 5, Duration.ofSeconds(60),
+        return new AuthSettings(8, 64, 5, Duration.ofSeconds(60),
                 "^[A-Za-z0-9_]{3,16}$", HashSettings.defaults());
     }
 

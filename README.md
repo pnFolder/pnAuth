@@ -1,60 +1,71 @@
 # pnAuth
 
-Общий плагин авторизации для BungeeCord и Velocity.
+pnAuth — плагин авторизации для прокси BungeeCord и Velocity. Один JAR поддерживает обе платформы и включает регистрацию, вход, опциональные сессии по IP, 2FA/TOTP, recovery-коды, CAPTCHA, миграции, лимиты по IP и встроенный auth-limbo.
 
-## Архитектура
+## Возможности
 
-- `shared` - API, auth lifecycle, PBKDF2/Bcrypt/Argon2, TOTP, recovery codes, sessions, IP limits, migrations and command service.
-- `bungeecord` - исходники адаптера BungeeCord.
-- `velocity` - исходники адаптера Velocity.
-- `plugin` - единый сборочный модуль, который компилирует оба адаптера в один JAR.
+- Русский и английский интерфейс: `locale: ru` или `locale: en`.
+- Пароли PBKDF2, BCrypt или Argon2id; PBKDF2-HMAC-SHA256 с 600 000 итераций используется по умолчанию.
+- Двухфакторная аутентификация с зашифрованными TOTP-секретами и одноразовыми recovery-кодами.
+- Ограничение неудачных попыток, временная блокировка и лимиты аккаунтов по IP.
+- Command- и dialog-интерфейсы, CAPTCHA, title/actionbar-напоминания.
+- SQLite, H2, MySQL, MariaDB, PostgreSQL или произвольный JDBC URL.
+- Импорт из AuthMe, nLogin, LimboAuth, McAuth и TiaAuth.
 
-Устанавливается один универсальный JAR. Для нескольких прокси укажите одну и ту же MySQL/MariaDB/PostgreSQL базу в конфигурации каждого прокси.
+## Установка
 
-## Команды
+1. Соберите или скачайте `pnAuth-<version>.jar`.
+2. Поместите JAR в каталог `plugins` BungeeCord или Velocity.
+3. Запустите прокси один раз. Будет создан `plugins/pnAuth/config.yml` и каталог `messages`.
+4. Настройте `config.yml`, затем перезапустите прокси.
 
-- `/register <пароль> <повтор>`
-- `/login <пароль>`
-- `/logout`
-- `/changepassword <старый> <новый>`
-- `/unregister <пароль>`
-- `/premium`
-- `/totp <enable|verify|disable> [код]`
-- `/status`
-- `/auth <admin-подкоманда>`
+Требуется Java 17 или новее. На сети из нескольких прокси используйте общую MySQL/MariaDB/PostgreSQL базу и одинаковый файл `totp.key` на всех узлах. Не публикуйте этот ключ: без него нельзя расшифровать 2FA-секреты.
 
-Администраторские подкоманды требуют permissions `pnauth.admin.commands.*`:
+## Основные команды
 
-- `/auth unregister <игрок>`
-- `/auth changepassword <игрок> <пароль>`
-- `/auth forcelogin <игрок>`
-- `/auth forceregister <игрок> <пароль>`
-- `/auth forcepremium <игрок>`
+| Команда | Назначение |
+| --- | --- |
+| `/register <пароль> <повтор>` | Регистрация аккаунта |
+| `/login <пароль>` | Вход |
+| `/logout` | Выход из текущей сессии |
+| `/changepassword <старый> <новый>` | Смена пароля |
+| `/unregister <пароль>` | Удаление аккаунта |
+| `/totp enable <пароль>` | Начать настройку 2FA (пароль обязателен) |
+| `/totp verify <код>` | Подтвердить настройку или войти с 2FA |
+| `/totp disable <пароль> <код>` | Отключить 2FA |
+| `/status` | Показать статус авторизации |
+| `/auth ui <auto\|on\|off>` | Выбрать dialog UI или команды |
 
-Административные команды работают из консоли и от имени игрока с соответствующим permission. Для регистрации аккаунта из консоли используйте `/auth forceregister <игрок> <пароль>` или `/auth register <игрок> <пароль>`.
+### Администрирование
 
-До авторизации разрешены только команды авторизации. Чат также блокируется.
+Админ-команды требуют соответствующее право `pnauth.admin.commands.<имя>`.
 
-Чтобы неавторизованный игрок не мог попасть на игровой сервер, настройте:
+| Команда | Право |
+| --- | --- |
+| `/auth unregister <игрок>` | `pnauth.admin.commands.unregister` |
+| `/auth changepassword <игрок> <пароль>` | `pnauth.admin.commands.changepassword` |
+| `/auth forcelogin <игрок>` | `pnauth.admin.commands.forcelogin` |
+| `/auth forceregister <игрок> <пароль>` | `pnauth.admin.commands.forceregister` |
+| `/auth forcepremium <игрок>` | `pnauth.admin.commands.forcepremium` |
+| `/auth broadcast <сообщение>` | `pnauth.admin.commands.broadcast` |
+| `/auth migrate <источник> <JDBC URL> [user] [password]` | `pnauth.admin.commands.migrate` |
 
-```yaml
-servers:
-  require-auth-before-server: true
-  auth-server: auth
-```
-
-Сервер `auth` должен существовать в конфигурации BungeeCord/Velocity.
+Premium-режим меняет режим аутентификации прокси, поэтому он доступен только администратору через `/auth forcepremium`; обычной команды самообслуживания нет.
 
 ## Конфигурация
 
-После первого запуска создается `config.yml`:
+Конфигурация описана в `PnAuthYamlConfig` и генерируется Elytrium Serializer. На первом запуске появляется полный `config.yml` с комментариями. При миграции схемы перед перезаписью создаётся `config.yml.bak`; актуальный файл с полной схемой не форматируется заново при обычном запуске.
 
 ```yaml
+config-version: 4
 locale: ru
+
 messages:
-  # LEGACY, MINI_MESSAGE, JSON or PLAIN
+  # LEGACY, MINI_MESSAGE, JSON или PLAIN
   format: LEGACY
+
 database:
+  # SQLITE, H2, MYSQL, MARIADB, POSTGRESQL или JDBC
   type: SQLITE
   file: auth.db
   mysql:
@@ -63,18 +74,18 @@ database:
     database: minecraft_auth
     username: ""
     password: ""
-    use-ssl: false
+    use-ssl: true
     server-timezone: UTC
+
 servers:
   auth-server: auth
   backend-server: hub
-  require-auth-before-server: false
-  forced-hosts:
-    play.example.com: hub
-    creative.example.com: creative
+  # Включите на публичной сети, чтобы игрок не попал на backend до входа.
+  require-auth-before-server: true
+
 security:
   password:
-    min-length: 6
+    min-length: 8
     max-length: 64
     repeat-on-register: true
   login:
@@ -84,74 +95,33 @@ security:
     ban-seconds: 60
   hashing:
     algorithm: PBKDF2
-    pbkdf2-iterations: 120000
-    bcrypt-cost: 12
-    argon2-iterations: 2
-    argon2-memory-kb: 65536
-    argon2-parallelism: 1
-validation:
-  username-pattern: "^[A-Za-z0-9_]{3,16}$"
-access:
-  block-chat: true
-  unauthenticated-commands: [auth, pnauth, register, reg, login, l, logout, changepassword, changepass, totp, 2fa, premium, status]
+    pbkdf2-iterations: 600000
+
 features:
-  premium:
-    enabled: true
   session:
+    # Выключено по умолчанию: один IP не является надёжным вторым фактором на NAT/VPN.
+    restore-on-same-ip: false
     lifetime-minutes: 60
     timeout-seconds: 60
-   # First reminder and interval between reminders; 0 disables reminders
-   reminder-seconds: 10
+    reminder-seconds: 10
   totp:
     enabled: true
     max-attempts: 3
     lockout-seconds: 60
+    setup-lifetime-seconds: 300
     issuer: "Minecraft Server"
     recovery-codes: 16
-ui:
-  dialogs:
-    enabled: true
-    fallback-to-commands: true
-    allow-player-preference: true
-    min-client-protocol: 771
-  bossbar: true
-  title: false
-  actionbar: false
-limbo:
-  provider: pico
-  enabled: false
-  server-name: auth
-  host: 127.0.0.1
-  port: 25566
-  auto-download: true
-  download-base-url: "https://github.com/Quozul/PicoLimbo/releases/latest/download/"
-  download-sha256: "1ba19f3ba52179a5eb20336bded8efa5f7967fea198927d1de49ebf190f3a527"
+  captcha:
+    enabled: false
+    lifetime-seconds: 30
+    max-attempts: 3
 ```
 
-Перевод выбирается в основном конфиге:
+`messages/messages_ru.yml` и `messages/messages_en.yml` создаются автоматически. Меняйте значения и оформление свободно: существующий файл никогда не перезаписывается. При обновлении отсутствующие новые ключи временно берутся из встроенного перевода, поэтому сервер остаётся рабочим без потери ваших комментариев.
 
-```yaml
-locale: ru
-```
+## База данных
 
-Формат сообщений выбирается в `messages.format`:
-
-- `LEGACY` - классические `&a`/`§a` коды;
-- `MINI_MESSAGE` - теги MiniMessage, например `<green>текст</green>`;
-- `JSON` - Minecraft text component JSON;
-- `PLAIN` - обычный текст без форматирования.
-
-Встроенные переводы хранятся в legacy-виде и автоматически преобразуются в выбранный формат. При `MINI_MESSAGE` locale-файлы также поддерживают MiniMessage-теги, включая hover/click. Значения placeholders экранируются и не могут добавить форматирование.
-
-Доступны `ru` и `en`. При первом запуске pnAuth создает редактируемые `plugins/pnAuth/messages/messages_ru.yml` и `messages_en.yml`. При обновлении плагина новые ключи добавляются автоматически, существующие пользовательские значения не перезаписываются. На BungeeCord 1.21.6+ доступна dialog-форма входа и регистрации.
-
-TOTP-секреты хранятся в базе в зашифрованном виде. Ключ шифрования создается в `totp.key`, его нельзя удалять или публиковать.
-
-При `limbo.enabled: true` pnAuth скачивает официальный PicoLimbo-бинарник с SHA-256 проверкой, запускает его, ждет готовности TCP-порта и регистрирует его как `server-name` на текущей платформе. Для работы лимбо `servers.auth-server` должен совпадать с `limbo.server-name`. На shutdown процесс корректно останавливается.
-
-Поддерживаются `SQLITE`, `H2`, `MYSQL`, `MARIADB`, `POSTGRESQL` и произвольный `JDBC` URL.
-
-Для общей базы:
+Для одиночного прокси достаточно SQLite. Для сети используйте одну общую базу:
 
 ```yaml
 database:
@@ -160,15 +130,23 @@ database:
     host: 127.0.0.1
     port: 3306
     database: minecraft_auth
-    username: "minecraft"
-    password: "change-me"
-    use-ssl: false
+    username: minecraft
+    password: change-me
+    use-ssl: true
     server-timezone: UTC
 ```
 
+Не храните `config.yml`, базы данных и `totp.key` в публичном репозитории. Они уже исключены через `.gitignore`.
+
+Для MySQL, MariaDB и PostgreSQL TLS включён по умолчанию и проверяет сертификат сервера. Отключайте `use-ssl` только для локальной доверенной базы; для PostgreSQL установите корректный корневой сертификат в настройках драйвера/системы.
+
+## Limbo
+
+Встроенный PicoLimbo отключён по умолчанию. При включении `limbo.enabled: true` укажите одинаковое значение для `servers.auth-server` и `limbo.server-name`; `servers.backend-server` должен быть другим сервером. Бинарный файл загружается только из заданного URL и проверяется SHA-256.
+
 ## API
 
-Общий контракт находится в `shared`:
+Платформонезависимый API и вся прикладная логика находятся в модуле `shared`. BungeeCord и Velocity являются тонкими адаптерами: они преобразуют события прокси во входные модели ядра и применяют готовые решения маршрутизации/доступа.
 
 ```java
 AuthApi api = plugin.getApi();
@@ -176,38 +154,211 @@ api.isAuthenticated(playerUuid);
 api.login(playerUuid, password).thenAccept(result -> { });
 ```
 
-В BungeeCord API доступен через `PnAuthBungeePlugin#getApi()`. В Velocity плагин можно получить через dependency injection и вызвать `PnAuthVelocityPlugin#getApi()`.
+### Единая система событий
 
-Пароли, соли и `AuthRecord` не выдаются публичным API. `AuthUser` содержит UUID, имя, даты, premium/TOTP-флаги и последний IP без секретов.
+Стороннему плагину не нужно писать отдельные listener-ы pnAuth для BungeeCord и Velocity. Получите `AuthApi` у платформенного плагина и зарегистрируйте один и тот же обработчик:
 
-Платформенная командная граница состоит из четырех интерфейсов:
+```java
+AuthSubscription subscription = api.events().subscribe(
+    UserAuthenticatedEvent.class,
+    event -> logger.info(event.username() + " authenticated via " + event.cause())
+);
 
-- `CommandService` описывает команды, выполнение и tab completion.
-- `CommandContext` передает команду и аргументы.
-- `CommandSource` абстрагирует игрока, консоль и permissions.
-- `AuthPlatformBridge` получает только эффекты `AUTHENTICATED`, `LOGGED_OUT` и `ACCOUNT_DELETED`.
+// При отключении вашего плагина:
+subscription.close();
+```
 
-Поэтому shared не импортирует BungeeCord или Velocity. Платформенные классы только преобразуют native command/event API в эти интерфейсы.
+Доступны события подключения и выхода, регистрации и удаления, успешной авторизации и каждой попытки входа, смены пароля, premium-режима, TOTP, dialog preference, admission policy и внешней верификации. Подписка на `UserAuthEvent` получает все пользовательские auth-события, а подписка на `AuthEvent` — вообще все события pnAuth.
 
-Limbo имеет отдельную provider-границу:
+До защищённой операции публикуется отменяемый `PreAuthOperationEvent`:
 
-- `LimboServer` описывает lifecycle и endpoint сервера.
-- `LimboServerProvider` создает конкретную реализацию.
-- `LimboServerRegistry` выбирает provider по `limbo.provider`.
-- `PicoLimboProvider` является встроенной реализацией, но не частью auth routing-контракта.
+```java
+api.events().subscribe(PreAuthOperationEvent.class, event -> {
+    if (event.context().operation() == AuthOperation.SERVER_ACCESS
+            && maintenanceMode()) {
+        event.cancel("maintenance");
+    }
+});
+```
 
-Для миграции поддержаны схемы `TIAUTH`, `AUTHME`, `MCAUTH`, `LIMBOAUTH` и `NLOGIN` через `AuthMigrationService` или `/auth migrate`.
+Отменяемые операции включают регистрацию, вход, выход, смену пароля, удаление аккаунта, TOTP, premium, admission, команды, чат и переходы между серверами. В атрибуты command-event попадает только имя команды — пароль и остальные аргументы никогда не публикуются.
 
-## Сборка
+### Extension Kernel
+
+Дополнительный плагин может зависеть только от `ExtensionKernel`, не используя auth-сервисы:
+
+```java
+ExtensionKernel kernel = pnAuthPlugin.getKernel();
+```
+
+Kernel состоит из четырёх независимых частей:
+
+- `events()` — общая шина событий любых плагинов. Собственное событие реализует `ExtensionEvent` и не обязано относиться к авторизации.
+- `services()` — типобезопасный registry произвольных контрактов между плагинами.
+- `display()` — прямой интерфейс управления actionbar, title и bossbar с реализацией текущей платформы.
+- `extensions()` — policy hooks и внешние verification tickets, непосредственно используемые pnAuth.
+
+Например, отдельный social-плагин может опубликовать собственный API:
+
+```java
+ServiceKey<DiscordLinkService> key = ServiceKey.of(
+    "social", "discord-links", DiscordLinkService.class
+);
+
+ServiceRegistration registration = kernel.services().register(
+    key, "my-discord-plugin", 100, discordLinkService
+);
+
+DiscordLinkService links = kernel.services().find(key).orElseThrow();
+```
+
+Service registry поддерживает несколько реализаций, приоритет `-5000..5000` и автоматический fallback после закрытия регистрации. Kernel не знает назначение сервиса: это может быть Discord, экономика, профиль, наказания или ещё не придуманная система.
+
+### Приоритеты и решения
+
+```java
+kernel.events().subscribe(
+    PreAuthOperationEvent.class,
+    new ListenerOptions(
+        "maintenance-plugin",
+        EventPriority.HIGH,
+        true,
+        ListenerMode.MUTATING
+    ),
+    event -> event.setDecision(true, "maintenance")
+);
+```
+
+Стандартные уровни: `LOWEST`, `LOW`, `NORMAL`, `HIGH`, `HIGHEST`, зарезервированный `SYSTEM` и read-only `MONITOR`. Пользовательское число ограничено диапазоном `-5000..5000`. Более высокий listener может вызвать `allow()` и заменить низкую отмену, если зарегистрирован с `receiveCancelled=true`. `MONITOR` получает окончательный результат, но менять его не может.
+
+`effectiveDecision()` показывает итог, а `decisionHistory()` содержит полный журнал: `ownerId`, приоритет, решение, причину и время. Поэтому всегда известно, какой плагин запретил или повторно разрешил действие.
+
+### Внешнее подтверждение: Discord, Telegram или собственный сервис
+
+Для асинхронной проверки используйте policy hook. Он может разрешить операцию, запретить её или потребовать внешнее подтверждение:
+
+```java
+AuthExtensionRegistration discordPolicy = api.extensions().register(
+    "discord",
+    100, // чем больше число, тем раньше выполняется policy
+    context -> CompletableFuture.completedFuture(
+        context.operation() == AuthOperation.LOGIN
+            ? AuthPolicyDecision.requireVerification(
+                "discord", "Confirm login in Discord", Duration.ofMinutes(5))
+            : AuthPolicyDecision.allow()
+    )
+);
+
+AuthSubscription tickets = api.events().subscribe(
+    VerificationRequiredEvent.class,
+    event -> discordBot.sendConfirmation(
+        event.ticket().username(),
+        event.ticket().id()
+    )
+);
+
+// Callback Discord-бота после подтверждения пользователем:
+api.extensions().approve(ticketId);
+```
+
+Для login/TOTP policy вызывается в фазе `CREDENTIAL_VERIFIED`: неправильный пароль или код не создаёт запрос в Discord. Пока ticket ожидает решения, игрок остаётся на auth-сервере и видит chat/actionbar/bossbar. После `approve(ticketId)` безопасное продолжение автоматически завершает уже проверенную попытку и переводит игрока на backend. Повторно вводить пароль не нужно.
+
+Ticket имеет TTL и привязан к игроку, имени, операции, фазе и generation сессии. Пароль, TOTP-код и recovery-коды не сохраняются. Старый ticket после переподключения не завершит новую сессию. Для отказа используется `deny(ticketId)`, а `VerificationResolvedEvent` сообщает результат.
+
+Каждый display имеет строковый ID. Повторный вызов с тем же UUID и ID продолжает управлять существующим объектом, а не создаёт новый:
+
+```java
+BossBarHandle bar = kernel.display().bossBar(
+    playerUuid,
+    "social:verification",
+    new BossBarOptions(
+        "Ожидание Discord",
+        1.0f,
+        BossBarColor.PURPLE,
+        BossBarOverlay.NOTCHED_10,
+        false, false, false,
+        Duration.ZERO // работает до явного удаления
+    )
+);
+
+bar.progress(0.75f);
+bar.text("Подтвердите вход");
+bar.color(BossBarColor.YELLOW);
+bar.animateProgress(0.0f, Duration.ofMinutes(5), Easing.LINEAR);
+
+// Получить и продолжить управление из другого места:
+kernel.display().findBossBar(playerUuid, "social:verification")
+    .ifPresent(existing -> existing.color(BossBarColor.GREEN));
+
+// Оба варианта отправляют реальное удаление клиенту:
+bar.close();
+kernel.display().removeBossBar(playerUuid, "social:verification");
+```
+
+`ActionBarHandle` позволяет менять текст, частоту повторной отправки и lifetime. `TitleHandle` управляет title/subtitle, fade-in, stay, fade-out и интервалом повтора. `BossBarHandle` управляет названием, progress, цветом, overlay, флагами, анимацией увеличения/уменьшения, паузой и lifetime. `Duration.ZERO` означает работу до явного `close/remove`.
+
+Velocity использует Adventure API. BungeeCord отправляет обычный proxy `BossBar` packet напрямую через соединение игрока. Display API никак не связан с PicoLimbo; Limbo остаётся только отдельным сервером-маршрутом.
+
+Обработчики событий вызываются в потоке, завершившем операцию pnAuth; для обращения к API конкретной платформы переключитесь на её scheduler.
+
+Архитектурный поток выглядит так: нативное событие прокси → `AuthLifecycleCoordinator` → `AuthService`/политики → типизированное решение и domain event → тонкий адаптер BungeeCord или Velocity. Новые правила добавляются в `shared`, поэтому платформы не должны реализовывать их повторно.
+
+Не передавайте наружу хеши паролей, TOTP-секреты или recovery-коды. Публичный `AuthUser` содержит только безопасные сведения об аккаунте.
+
+### Platform and player API
+
+Расширения получают игроков только через pnAuth и не зависят от классов Bungee, Velocity или Bukkit:
+
+```java
+PnPlatform platform = kernel.platform();
+
+platform.player(playerId).ifPresent(player -> {
+    player.sendMessage("Обычный текст");
+    player.sendMessage(Component.text("Adventure component", NamedTextColor.GREEN));
+    player.sendMessages(List.of(
+        Component.text("Первая строка"),
+        Component.text("Вторая строка")
+    ));
+
+    String ip = player.ipAddress();
+    Optional<String> server = player.currentServer();
+});
+```
+
+`PnPlayer` также предоставляет permissions, disconnect, display, dialogs и player-bound scheduler. На Folia player-bound задачи используют entity scheduler, а общие задачи — global region scheduler.
+
+Именованные задачи хранятся в общем реестре. Повторная регистрация того же `owner + taskId + playerId` отменяет старую задачу:
+
+```java
+TaskHandle reminder = platform.tasks().repeating(
+    "discord-extension",
+    "verification-reminder",
+    player,
+    Duration.ZERO,
+    Duration.ofSeconds(2),
+    () -> player.sendMessage(Component.text("Подтвердите вход в Discord"))
+);
+
+platform.tasks().find("discord-extension", "verification-reminder", player.uniqueId());
+platform.tasks().cancel("discord-extension", "verification-reminder", player.uniqueId());
+platform.tasks().cancelAll("discord-extension");
+```
+
+При выходе игрока pnAuth автоматически закрывает его dialogs/display и отменяет все player-scoped tasks.
+
+`PlayerDialog` повторяет нативную schema Minecraft: общий `DialogLayout`, типы `notice`, `confirmation`, `multi_action`, `server_links`, `dialog_list`; body `plain_message`/`item`; inputs `text`, `boolean`, `single_option`, `number_range`; static и dynamic actions, `exit_action`, columns/button width и все три `after_action`. `response()` ожидает первый ответ, а `onResponse(...)` принимает весь поток submit-событий для `after_action=none`.
+
+На Paper 1.21.7+ pnAuth реально строит inline registry dialog, выполняет Vanilla `dialog show`, принимает `PlayerCustomClickEvent`, декодирует значения и поддерживает `dialog clear`. Более старые клиенты не объявляются native-capable: элементы формы никогда не отбрасываются молча.
+
+Для standalone Paper/Folia раздел `paper` в `config.yml` задаёт auth-точку телепортации (`world`, `x/y/z`, `yaw/pitch`) и независимые ограничения `movement`, `chat`, `commands`, `interaction`, `breaking`, `placing`, `inventory`.
+
+Один универсальный JAR содержит адаптеры BungeeCord, Velocity, Paper и Folia. Paper/Folia регистрируют тот же набор команд и aliases, что proxy-версии; мир, chat, inventory и посторонние команды блокируются до успешной авторизации. Базовая совместимость — Java 17 и Paper/Folia 1.20.4+, а нативные возможности более новых клиентов включаются через capability adapters.
+
+## Сборка и проверка
 
 ```powershell
+./gradlew.bat test
 ./gradlew.bat clean dist
 ```
 
-Это одна сборочная задача и один универсальный JAR:
-
-- `build/dist/pnAuth-1.0.0.jar`
-
-JAR содержит дескрипторы обеих платформ. BungeeCord использует `bungee.yml`, Velocity использует `velocity-plugin.json`.
-
-Требуется Java 17 или новее.
+Итоговый универсальный JAR появится в `build/dist/`.

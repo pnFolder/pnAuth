@@ -26,15 +26,29 @@ final class VelocityAuthActions implements AuthPlatformBridge {
     @Override
     public void authenticated(UUID uniqueId) {
         Player player = proxy.getPlayer(uniqueId).orElse(null);
+        authenticated(player);
+    }
+
+    @Override
+    public void authenticated(String username) {
+        authenticated(proxy.getPlayer(username).orElse(null));
+    }
+
+    private void authenticated(Player player) {
         if (player == null) return;
+        if (!settings.hasBackendServer()) return;
+        // Initial routing is applied by PlayerChooseInitialServerEvent from the shared lifecycle decision.
+        // Authentication events only move players that are already connected to an auth server.
+        if (player.getCurrentServer().isEmpty()) return;
         String serverName = player.getVirtualHost()
                 .map(host -> settings.forcedHosts().getOrDefault(host.getHostString().toLowerCase(), settings.backendServer()))
                 .orElse(settings.backendServer());
-        RegisteredServer target = proxy.getServer(serverName).orElseGet(() -> proxy.getAllServers().stream()
-                .filter(server -> !server.getServerInfo().getName().equalsIgnoreCase(settings.authServer()))
-                .findFirst()
-                .orElse(null));
-        if (target != null && player.getCurrentServer().map(server -> !server.getServer().equals(target)).orElse(true)) {
+        RegisteredServer target = proxy.getServer(serverName).orElse(null);
+        if (target == null) {
+            player.disconnect(VelocityMessages.component(messages.text("access.backend_missing"), messageFormat));
+            return;
+        }
+        if (player.getCurrentServer().map(server -> !server.getServer().equals(target)).orElse(true)) {
             player.createConnectionRequest(target).connect();
         }
     }
@@ -49,5 +63,17 @@ final class VelocityAuthActions implements AuthPlatformBridge {
     public void accountDeleted(UUID uniqueId) {
         proxy.getPlayer(uniqueId).ifPresent(player -> player.disconnect(
                 VelocityMessages.component(messages.text("unregister.disconnect"), messageFormat)));
+    }
+
+    @Override
+    public void accountDeleted(String username) {
+        proxy.getPlayer(username).ifPresent(player -> player.disconnect(
+                VelocityMessages.component(messages.text("unregister.disconnect"), messageFormat)));
+    }
+
+    @Override
+    public void broadcast(String message) {
+        proxy.getAllPlayers().forEach(player -> player.sendMessage(
+                VelocityMessages.component(messages.text("broadcast.message", java.util.Map.of("message", message)), messageFormat)));
     }
 }

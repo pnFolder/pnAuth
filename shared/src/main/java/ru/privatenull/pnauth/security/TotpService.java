@@ -41,7 +41,8 @@ public final class TotpService {
         }
         long time = System.currentTimeMillis() / 30_000L;
         for (long offset = -1; offset <= 1; offset++) {
-            if (generateCode(secret, time + offset).equals(code)) {
+            if (MessageDigest.isEqual(generateCode(secret, time + offset).getBytes(StandardCharsets.US_ASCII),
+                    code.getBytes(StandardCharsets.US_ASCII))) {
                 return true;
             }
         }
@@ -72,6 +73,14 @@ public final class TotpService {
     public void saveRecoveryCodes(UUID uniqueId, List<String> codes) {
         repository.clearRecoveryCodes(uniqueId);
         codes.forEach(code -> repository.addRecoveryCode(uniqueId, hashRecoveryCode(code)));
+    }
+
+    public void replaceTotpData(UUID uniqueId, String encryptedSecret, List<String> codes) {
+        repository.replaceTotpData(uniqueId, encryptedSecret, codes.stream().map(TotpService::hashRecoveryCode).toList());
+    }
+
+    public void clearTotpData(UUID uniqueId) {
+        repository.clearTotpData(uniqueId);
     }
 
     public boolean consumeRecoveryCode(UUID uniqueId, String code) {

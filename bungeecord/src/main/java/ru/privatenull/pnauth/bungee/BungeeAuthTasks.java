@@ -27,7 +27,8 @@ public final class BungeeAuthTasks implements Listener, AutoCloseable {
     private final ProxySettings proxySettings;
     private final Map<UUID, TaskPair> tasks = new ConcurrentHashMap<>();
 
-    BungeeAuthTasks(Plugin plugin, AuthApi auth, AuthMessages messages, FeatureSettings settings, ProxySettings proxySettings) {
+    BungeeAuthTasks(Plugin plugin, AuthApi auth, AuthMessages messages, FeatureSettings settings,
+                    ProxySettings proxySettings) {
         this.plugin = plugin;
         this.auth = auth;
         this.messages = messages;
@@ -49,6 +50,7 @@ public final class BungeeAuthTasks implements Listener, AutoCloseable {
                     cancel(player.getUniqueId());
                     return;
                 }
+                if (shouldSuppressCommandReminder(player, status)) return;
                 player.sendMessage(BungeeMessages.component(
                         messages.text(status == AuthStatus.UNREGISTERED ? "reminder.register" : "reminder.login"),
                         messages.format()));
@@ -86,6 +88,13 @@ public final class BungeeAuthTasks implements Listener, AutoCloseable {
             if (pair.reminder != null) pair.reminder.cancel();
             pair.timeout.cancel();
         }
+    }
+
+    private boolean shouldSuppressCommandReminder(ProxiedPlayer player, AuthStatus status) {
+        if (status != AuthStatus.UNREGISTERED && status != AuthStatus.UNAUTHENTICATED) return false;
+        int protocol = player.getPendingConnection().getVersion();
+        if (auth.shouldUseDialog(player.getUniqueId(), protocol, true)) return true;
+        return !auth.shouldUseCommandFallback(player.getUniqueId(), protocol, true);
     }
 
     private record TaskPair(ScheduledTask reminder, ScheduledTask timeout) {

@@ -24,9 +24,23 @@ final class BungeeAuthActions implements AuthPlatformBridge {
     @Override
     public void authenticated(UUID uniqueId) {
         ProxiedPlayer player = proxy.getPlayer(uniqueId);
+        authenticated(player);
+    }
+
+    @Override
+    public void authenticated(String username) {
+        authenticated(proxy.getPlayer(username));
+    }
+
+    private void authenticated(ProxiedPlayer player) {
         if (player == null) return;
+        if (!settings.hasBackendServer()) return;
         ServerInfo target = target(player);
-        if (target == null || target.equals(player.getServer() == null ? null : player.getServer().getInfo())) return;
+        if (target == null) {
+            player.disconnect(BungeeMessages.component(messages.text("access.backend_missing"), messages.format()));
+            return;
+        }
+        if (target.equals(player.getServer() == null ? null : player.getServer().getInfo())) return;
         player.connect(target, (success, error) -> {
             if (!Boolean.TRUE.equals(success) && player.isConnected()) {
                 player.disconnect(BungeeMessages.component(messages.text("access.backend_missing"), messages.format()));
@@ -44,6 +58,19 @@ final class BungeeAuthActions implements AuthPlatformBridge {
         disconnect(uniqueId, "unregister.disconnect");
     }
 
+    @Override
+    public void accountDeleted(String username) {
+        ProxiedPlayer player = proxy.getPlayer(username);
+        if (player != null) player.disconnect(BungeeMessages.component(
+                messages.text("unregister.disconnect"), messages.format()));
+    }
+
+    @Override
+    public void broadcast(String message) {
+        proxy.getPlayers().forEach(player -> player.sendMessage(
+                BungeeMessages.components(messages.text("broadcast.message", java.util.Map.of("message", message)), messages.format())));
+    }
+
     private void disconnect(UUID uniqueId, String key) {
         ProxiedPlayer player = proxy.getPlayer(uniqueId);
         if (player != null) player.disconnect(BungeeMessages.component(messages.text(key), messages.format()));
@@ -56,10 +83,6 @@ final class BungeeAuthActions implements AuthPlatformBridge {
             name = settings.forcedHosts().getOrDefault(host.getHostString().toLowerCase(), name);
         }
         ServerInfo configured = proxy.getServerInfo(name);
-        if (configured != null) return configured;
-        return proxy.getServers().values().stream()
-                .filter(server -> !server.getName().equalsIgnoreCase(settings.authServer()))
-                .findFirst()
-                .orElse(null);
+        return configured;
     }
 }

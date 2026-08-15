@@ -8,6 +8,8 @@ import ru.privatenull.pnauth.api.TotpSetup;
 import ru.privatenull.pnauth.message.AuthMessages;
 import ru.privatenull.pnauth.storage.AuthMigrationService;
 import ru.privatenull.pnauth.config.FeatureSettings;
+import ru.privatenull.pnauth.event.BroadcastRequestedEvent;
+import ru.privatenull.pnauth.extension.AuthOperationRejectedException;
 
 import java.util.Arrays;
 import java.util.List;
@@ -20,7 +22,7 @@ import java.util.concurrent.CompletionStage;
 public final class AuthCommandService implements CommandService {
     private final AuthApi api;
     private final AuthMessages messages;
-    private final AuthPlatformBridge actions;
+    private final AuthPlatformEventAdapter platformEvents;
     private final AuthMigrationService migration;
     private final FeatureSettings features;
 
@@ -41,7 +43,8 @@ public final class AuthCommandService implements CommandService {
                               AuthMigrationService migration, FeatureSettings features) {
         this.api = api;
         this.messages = messages;
-        this.actions = actions == null ? AuthPlatformBridge.NONE : actions;
+        this.platformEvents = actions == null || actions == AuthPlatformBridge.NONE
+                ? null : new AuthPlatformEventAdapter(api.events(), actions);
         this.migration = migration;
         this.features = features;
     }
@@ -56,7 +59,6 @@ public final class AuthCommandService implements CommandService {
                 new CommandSpec("changepassword", List.of("changepass")),
                 new CommandSpec("totp", List.of("2fa")),
                 new CommandSpec("unregister", List.of("unreg")),
-                new CommandSpec("premium", List.of()),
                 new CommandSpec("status", List.of())
         );
     }
@@ -97,10 +99,13 @@ public final class AuthCommandService implements CommandService {
         CompletionStage<AuthResult> operation;
         switch (command) {
             case "register", "reg" -> {
-                if (args.size() != 2) {
-                    return completed(messages.text("usage.register"));
+                int expectedArguments = features.repeatPasswordWhenRegister() ? 2 : 1;
+                if (args.size() != expectedArguments) {
+                    return completed(messages.text(features.repeatPasswordWhenRegister()
+                            ? "usage.register" : "usage.register-single"));
                 }
-                operation = api.register(uniqueId, username, args.get(0), args.get(1));
+                operation = api.register(uniqueId, username, args.get(0),
+                        features.repeatPasswordWhenRegister() ? args.get(1) : args.get(0));
             }
             case "login", "l" -> {
                 if (args.size() != 1) {
@@ -125,8 +130,9 @@ public final class AuthCommandService implements CommandService {
                 operation = api.unregister(uniqueId, args.get(0));
             }
             case "premium" -> {
-                if (!args.isEmpty()) return completed(messages.text("usage.premium"));
-                operation = api.togglePremium(uniqueId);
+                // Premium mode changes the proxy authentication mode and must never be self-service.
+                // Keep this guard for installations that still register a legacy /premium command.
+                return completed(messages.text("no-permission"));
             }
             case "ui", "dialogs" -> {
                 if (args.size() != 1) return completed(messages.text("usage.ui"));
@@ -143,15 +149,22 @@ public final class AuthCommandService implements CommandService {
                 if (args.isEmpty()) return completed(messages.text("usage.totp"));
                 String action = normalize(args.get(0));
                 if (action.equals("enable")) {
-                    String password = args.size() > 1 ? args.get(1) : null;
+                    if (args.size() != 2) return completed(messages.text("usage.totp"));
+                    String password = args.get(1);
                     return api.beginTotpSetup(uniqueId, password, features.totpIssuer())
                             .thenApply(this::totpSetupMessages)
-                            .exceptionally(error -> List.of(messages.text("operation-error")));
+                            .exceptionally(error -> {
+                                Throwable cause = error instanceof java.util.concurrent.CompletionException
+                                        ? error.getCause() : error;
+                                return cause instanceof AuthOperationRejectedException rejected
+                                        ? List.of(resultMessage(rejected.result()))
+                                        : List.of(messages.text("operation-error"));
+                            });
                 }
                 if (action.equals("verify") && args.size() == 2) {
                     operation = api.verifyTotp(uniqueId, args.get(1));
-                } else if (action.equals("disable") && args.size() == 2) {
-                    operation = api.disableTotp(uniqueId, null, args.get(1));
+                } else if (action.equals("disable") && args.size() == 3) {
+                    operation = api.disableTotp(uniqueId, args.get(1), args.get(2));
                 } else {
                     return completed(messages.text("usage.totp"));
                 }
@@ -172,11 +185,7 @@ public final class AuthCommandService implements CommandService {
             if (error != null) return List.of(messages.text("operation-error"));
             if (result == AuthResult.SUCCESS) {
                 if (api.isAuthenticated(uniqueId)) {
-                    actions.authenticated(uniqueId);
-                } else if (executedCommand.equals("logout")) {
-                    actions.loggedOut(uniqueId);
-                } else if (executedCommand.equals("unregister") || executedCommand.equals("unreg")) {
-                    actions.accountDeleted(uniqueId);
+                    return List.of(messages.text("auth.success"));
                 }
             }
             return List.of(resultMessage(result));
@@ -191,11 +200,11 @@ public final class AuthCommandService implements CommandService {
     public List<String> suggest(String command, List<String> arguments) {
         String normalized = normalize(command);
         if ((normalized.equals("auth") || normalized.equals("pnauth")) && arguments.isEmpty()) {
-            return List.of("unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "migrate");
+            return List.of("unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "broadcast", "migrate");
         }
         if (normalized.equals("auth") || normalized.equals("pnauth")) {
             String prefix = arguments.isEmpty() ? "" : normalize(arguments.get(arguments.size() - 1));
-            return List.of("unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "migrate").stream()
+            return List.of("unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "broadcast", "migrate").stream()
                     .filter(value -> value.startsWith(prefix))
                     .toList();
         }
@@ -239,9 +248,17 @@ public final class AuthCommandService implements CommandService {
         if (!request.hasPermission(permission)) {
             return completed(messages.text("no-permission"));
         }
+        if (command.equals("broadcast")) {
+            if (args.isEmpty()) return completed(messages.text("admin.commands.broadcast"));
+            api.events().publish(new BroadcastRequestedEvent(String.join(" ", args)));
+            return completed(messages.text("admin.broadcast.success"));
+        }
         if (command.equals("unregister") || command.equals("unreg")) {
             if (args.size() != 1) return completed(messages.text("admin.commands.unregister"));
-            return api.unregister(args.get(0)).thenApply(result -> List.of(adminResult("unregister", result, args.get(0))));
+            String username = args.get(0);
+            return api.unregister(username).thenApply(result -> {
+                return List.of(adminResult("unregister", result, username));
+            });
         }
         if (command.equals("changepassword") || command.equals("changepass")) {
             if (args.size() != 2) return completed(messages.text("admin.commands.changepassword"));
@@ -250,7 +267,10 @@ public final class AuthCommandService implements CommandService {
         }
         if (command.equals("forcelogin")) {
             if (args.size() != 1) return completed(messages.text("admin.commands.forcelogin"));
-            return api.forceLogin(args.get(0)).thenApply(result -> List.of(adminResult("forcelogin", result, args.get(0))));
+            String username = args.get(0);
+            return api.forceLogin(username).thenApply(result -> {
+                return List.of(adminResult("forcelogin", result, username));
+            });
         }
         if (command.equals("forcepremium") || command.equals("premium")) {
             if (args.size() != 1) return completed(messages.text("admin.commands.forcepremium"));
@@ -282,7 +302,7 @@ public final class AuthCommandService implements CommandService {
                 || command.equals("changepassword") || command.equals("changepass")
                 || command.equals("forcelogin") || command.equals("forceregister") || command.equals("forcereg")
                 || command.equals("forcepremium") || command.equals("premium") || command.equals("register")
-                || command.equals("migrate");
+                || command.equals("broadcast") || command.equals("migrate");
     }
 
     private List<String> adminHelp(AuthCommandRequest request) {

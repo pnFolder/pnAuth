@@ -15,6 +15,28 @@ import ru.privatenull.pnauth.config.FeatureSettings;
 import ru.privatenull.pnauth.security.IpBanStore;
 import ru.privatenull.pnauth.security.PasswordHasher;
 import ru.privatenull.pnauth.security.TotpService;
+import ru.privatenull.pnauth.event.AuthEventBus;
+import ru.privatenull.pnauth.event.SimpleAuthEventBus;
+import ru.privatenull.pnauth.event.TotpStateChangedEvent;
+import ru.privatenull.pnauth.event.UserAuthenticatedEvent;
+import ru.privatenull.pnauth.event.UserJoinedEvent;
+import ru.privatenull.pnauth.event.UserLoggedOutEvent;
+import ru.privatenull.pnauth.event.UserUnregisteredEvent;
+import ru.privatenull.pnauth.event.PreAuthOperationEvent;
+import ru.privatenull.pnauth.event.AuthOperationCompletedEvent;
+import ru.privatenull.pnauth.event.VerificationRequiredEvent;
+import ru.privatenull.pnauth.event.*;
+import ru.privatenull.pnauth.extension.AuthExtensionRegistry;
+import ru.privatenull.pnauth.extension.DefaultAuthExtensionRegistry;
+import ru.privatenull.pnauth.extension.AuthOperation;
+import ru.privatenull.pnauth.extension.AuthOperationContext;
+import ru.privatenull.pnauth.extension.AuthPolicyDecision;
+import ru.privatenull.pnauth.extension.AuthOperationRejectedException;
+import ru.privatenull.pnauth.display.*;
+import ru.privatenull.pnauth.kernel.service.DefaultServiceRegistry;
+import ru.privatenull.pnauth.kernel.service.ServiceRegistry;
+import ru.privatenull.pnauth.platform.PnPlatform;
+import ru.privatenull.pnauth.platform.UnavailablePlatform;
 
 import java.time.Clock;
 import java.util.Locale;
@@ -42,37 +64,87 @@ public final class AuthService implements AuthApi {
     private final ConcurrentMap<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, AttemptState> failedAttempts = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, AttemptState> failedTotpAttempts = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, TotpSetup> pendingTotpSetups = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, PendingTotpSetup> pendingTotpSetups = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Runnable> verificationContinuations = new ConcurrentHashMap<>();
     private final IpBanStore bans = new IpBanStore();
+    private final AuthEventBus events;
+    private final AuthExtensionRegistry extensions;
+    private volatile PlayerDisplay display = new NoopPlayerDisplay();
+    private volatile PnPlatform platform = new UnavailablePlatform();
+    private final ConcurrentMap<String, java.util.List<DisplayHandle>> verificationDisplays = new ConcurrentHashMap<>();
+    private final ServiceRegistry services = new DefaultServiceRegistry();
 
     public AuthService(AuthRepository repository, AuthSettings settings) {
-        this(repository, settings, new TotpService(repository, randomKey()), FeatureSettings.defaults(), Clock.systemUTC());
+        this(repository, settings, new TotpService(repository, randomKey()), FeatureSettings.defaults(), Clock.systemUTC(), new SimpleAuthEventBus());
     }
 
     public AuthService(AuthRepository repository, AuthSettings settings, Clock clock) {
-        this(repository, settings, new TotpService(repository, randomKey()), FeatureSettings.defaults(), clock);
+        this(repository, settings, new TotpService(repository, randomKey()), FeatureSettings.defaults(), clock, new SimpleAuthEventBus());
     }
 
     public AuthService(AuthRepository repository, AuthSettings settings, TotpService totp) {
-        this(repository, settings, totp, FeatureSettings.defaults(), Clock.systemUTC());
+        this(repository, settings, totp, FeatureSettings.defaults(), Clock.systemUTC(), new SimpleAuthEventBus());
     }
 
     public AuthService(AuthRepository repository, AuthSettings settings, TotpService totp, FeatureSettings features) {
-        this(repository, settings, totp, features, Clock.systemUTC());
+        this(repository, settings, totp, features, Clock.systemUTC(), new SimpleAuthEventBus());
     }
 
     AuthService(AuthRepository repository, AuthSettings settings, TotpService totp, FeatureSettings features, Clock clock) {
+        this(repository, settings, totp, features, clock, new SimpleAuthEventBus());
+    }
+
+    public AuthService(AuthRepository repository, AuthSettings settings, TotpService totp,
+                       FeatureSettings features, AuthEventBus events) {
+        this(repository, settings, totp, features, Clock.systemUTC(), events, new DefaultAuthExtensionRegistry());
+    }
+
+    AuthService(AuthRepository repository, AuthSettings settings, TotpService totp, FeatureSettings features,
+                Clock clock, AuthEventBus events) {
+        this(repository, settings, totp, features, clock, events, new DefaultAuthExtensionRegistry());
+    }
+
+    public AuthService(AuthRepository repository, AuthSettings settings, TotpService totp, FeatureSettings features,
+                       AuthEventBus events, AuthExtensionRegistry extensions) {
+        this(repository, settings, totp, features, Clock.systemUTC(), events, extensions);
+    }
+
+    AuthService(AuthRepository repository, AuthSettings settings, TotpService totp, FeatureSettings features,
+                Clock clock, AuthEventBus events, AuthExtensionRegistry extensions) {
         this.repository = repository;
         this.settings = settings;
         this.totp = totp;
         this.features = features;
         this.clock = clock;
+        this.events = java.util.Objects.requireNonNull(events, "events");
+        this.extensions = java.util.Objects.requireNonNull(extensions, "extensions");
         ThreadFactory threadFactory = runnable -> {
             Thread thread = new Thread(runnable, "pnauth-worker");
             thread.setDaemon(true);
             return thread;
         };
         this.executor = Executors.newFixedThreadPool(2, threadFactory);
+        this.extensions.onTicket(ticket -> {
+            if (ticket.status() == ru.privatenull.pnauth.extension.VerificationTicket.Status.PENDING) {
+                events.publish(new VerificationRequiredEvent(ticket));
+                if (ticket.uniqueId() != null) {
+                    java.time.Duration remaining = java.time.Duration.between(java.time.Instant.now(), ticket.expiresAt());
+                    verificationDisplays.put(ticket.id(), java.util.List.of(
+                            display.actionBar(ticket.uniqueId(), "pnauth:verification:action:" + ticket.id(), new ActionBarOptions(
+                                    ticket.message(), java.time.Duration.ofSeconds(1), remaining)),
+                            display.bossBar(ticket.uniqueId(), "pnauth:verification:boss:" + ticket.id(), new BossBarOptions(
+                                    ticket.message(), 1F, BossBarColor.PURPLE, BossBarOverlay.PROGRESS,
+                                    false, false, false, remaining))));
+                }
+            } else {
+                events.publish(new VerificationResolvedEvent(ticket));
+                java.util.List<DisplayHandle> handles = verificationDisplays.remove(ticket.id());
+                if (handles != null) handles.forEach(DisplayHandle::close);
+                Runnable continuation = verificationContinuations.remove(ticket.id());
+                if (ticket.status() == ru.privatenull.pnauth.extension.VerificationTicket.Status.APPROVED
+                        && continuation != null) executor.execute(continuation);
+            }
+        });
     }
 
     @Override
@@ -87,10 +159,14 @@ public final class AuthService implements AuthApi {
         }
         long generation = generations.incrementAndGet();
         joining.put(uniqueId, generation);
-        failedAttempts.remove(uniqueId);
         String normalizedUsername = normalizeUsername(username);
         return async(() -> {
             Optional<AuthRecord> found = repository.findByUniqueId(uniqueId);
+            if (found.isEmpty() && !normalizedUsername.isEmpty()) {
+                // Velocity can assign a different UUID when an account changes between
+                // online and offline mode. The account itself remains username-based.
+                found = repository.findByUsername(normalizedUsername);
+            }
             AuthRecord record = found.orElse(null);
             if (record != null && !record.username().equals(normalizedUsername)) {
                 repository.updateUsername(uniqueId, normalizedUsername);
@@ -109,14 +185,30 @@ public final class AuthService implements AuthApi {
                 );
             }
             AuthRecord loaded = record;
-            boolean sessionValid = loaded != null && ((loaded.premium() && features.premiumEnabled())
-                    || (ip != null && ip.equals(loaded.lastIp()) && loaded.lastLoginAt() != null
-                    && clock.millis() - loaded.lastLoginAt() <= features.sessionLifetime().toMillis()));
+            boolean hasTotp = loaded != null && features.totpEnabled()
+                    && loaded.totpSecret() != null && !loaded.totpSecret().isBlank();
+            boolean trustedPremiumLogin = loaded != null && loaded.premium() && features.premiumEnabled();
+            long lastLoginAge = loaded == null || loaded.lastLoginAt() == null
+                    ? Long.MAX_VALUE : clock.millis() - loaded.lastLoginAt();
+            boolean trustedIpSession = loaded != null && features.restoreSessionOnSameIp()
+                    && ip != null && ip.equals(loaded.lastIp()) && loaded.lastLoginAt() != null
+                    && lastLoginAge >= 0 && lastLoginAge <= features.sessionLifetime().toMillis();
+            boolean sessionValid = trustedPremiumLogin || trustedIpSession;
             AuthStatus status = loaded == null
                     ? AuthStatus.UNREGISTERED
-                    : sessionValid ? AuthStatus.AUTHENTICATED : AuthStatus.UNAUTHENTICATED;
+                    : sessionValid ? (hasTotp ? AuthStatus.TOTP_PENDING : AuthStatus.AUTHENTICATED)
+                    : AuthStatus.UNAUTHENTICATED;
+            if (sessionValid && loaded != null && !loaded.uniqueId().equals(uniqueId)) {
+                loaded = reassignIdentity(loaded, uniqueId);
+            }
             if (joining.get(uniqueId) != null && joining.get(uniqueId) == generation) {
                 sessions.put(uniqueId, new Session(generation, loaded, status, ip));
+                events.publish(new UserJoinedEvent(uniqueId, username, ip, status));
+                if (status == AuthStatus.AUTHENTICATED) {
+                    events.publish(new UserAuthenticatedEvent(uniqueId, username,
+                            trustedPremiumLogin ? UserAuthenticatedEvent.Cause.PREMIUM
+                                    : UserAuthenticatedEvent.Cause.SESSION));
+                }
             }
             return status;
         });
@@ -128,8 +220,13 @@ public final class AuthService implements AuthApi {
             return;
         }
         joining.remove(uniqueId);
-        sessions.remove(uniqueId);
-        failedAttempts.remove(uniqueId);
+        Session departed = sessions.remove(uniqueId);
+        pendingTotpSetups.remove(uniqueId);
+        display.clear(uniqueId);
+        platform.tasks().cancelAll(uniqueId);
+        platform.dialogs().closeAll(uniqueId);
+        events.publish(new UserQuitEvent(uniqueId,
+                departed == null || departed.record == null ? "" : departed.record.realName()));
     }
 
     @Override
@@ -142,7 +239,9 @@ public final class AuthService implements AuthApi {
         if (uniqueId == null) {
             return CompletableFuture.completedFuture(AuthResult.NOT_JOINED);
         }
-        return async(() -> {
+        Session registrationSession = sessions.get(uniqueId);
+        return guarded(new AuthOperationContext(AuthOperation.REGISTER, uniqueId, username,
+                registrationSession == null ? null : registrationSession.ip, java.util.Map.of()), () -> {
             Session session = sessions.get(uniqueId);
             if (session == null) {
                 return AuthResult.NOT_JOINED;
@@ -175,6 +274,8 @@ public final class AuthService implements AuthApi {
                         : AuthResult.USERNAME_TAKEN;
             }
             replaceSession(uniqueId, session, new Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip));
+            events.publish(new UserRegisteredEvent(uniqueId, record.realName(), session.ip, false));
+            events.publish(new UserAuthenticatedEvent(uniqueId, record.realName(), UserAuthenticatedEvent.Cause.REGISTER));
             return AuthResult.SUCCESS;
         });
     }
@@ -184,31 +285,57 @@ public final class AuthService implements AuthApi {
         if (uniqueId == null) {
             return CompletableFuture.completedFuture(AuthResult.NOT_JOINED);
         }
+        Session initial = sessions.get(uniqueId);
+        AuthOperationContext request = new AuthOperationContext(AuthOperation.LOGIN,
+                ru.privatenull.pnauth.extension.AuthPhase.REQUEST, uniqueId,
+                initial == null || initial.record == null ? "" : initial.record.realName(),
+                initial == null ? null : initial.ip, java.util.Map.of());
+        PreAuthOperationEvent preEvent = new PreAuthOperationEvent(request);
+        events.publish(preEvent);
+        if (preEvent.cancelled()) return completedOperation(request, AuthResult.OPERATION_DENIED);
         return async(() -> {
             Session session = sessions.get(uniqueId);
             if (session == null) {
-                return AuthResult.NOT_JOINED;
+                return new LoginPreparation(null, AuthResult.NOT_JOINED);
             }
             if (session.record == null) {
-                return AuthResult.NOT_REGISTERED;
+                return new LoginPreparation(null, AuthResult.NOT_REGISTERED);
             }
             if (session.status == AuthStatus.AUTHENTICATED) {
-                return AuthResult.ALREADY_AUTHENTICATED;
+                return new LoginPreparation(null, AuthResult.ALREADY_AUTHENTICATED);
             }
-            if (isLocked(uniqueId)) {
-                return AuthResult.LOCKED_OUT;
+            UUID attemptKey = attemptKey(uniqueId, session);
+            if (isLocked(attemptKey)) {
+                return new LoginPreparation(null, AuthResult.LOCKED_OUT);
             }
-            if (password == null || !PasswordHasher.matches(password, session.record.passwordHash())) {
-                return failedLogin(uniqueId);
+            if (password == null || password.length() > settings.maxPasswordLength()
+                    || !PasswordHasher.matches(password, session.record.passwordHash())) {
+                return new LoginPreparation(null, failedLogin(attemptKey, session));
             }
+
+            session = upgradePasswordHash(uniqueId, session, password);
 
             if (features.totpEnabled() && session.record.totpSecret() != null && !session.record.totpSecret().isBlank()) {
                 replaceSession(uniqueId, session, new Session(session.generation, session.record, AuthStatus.TOTP_PENDING, session.ip));
-                return AuthResult.TOTP_REQUIRED;
+                return new LoginPreparation(null, AuthResult.TOTP_REQUIRED);
             }
-
-            return authenticate(uniqueId, session);
-        });
+            return new LoginPreparation(session, null);
+        }).thenCompose(prepared -> {
+            if (prepared.result != null) return completedOperation(request, prepared.result);
+            AuthOperationContext verified = request.at(ru.privatenull.pnauth.extension.AuthPhase.CREDENTIAL_VERIFIED);
+            return extensions.evaluate(verified).thenCompose(decision -> {
+                if (decision.type() == AuthPolicyDecision.Type.DENY) {
+                    return completedOperation(verified, AuthResult.OPERATION_DENIED);
+                }
+                if (decision.type() == AuthPolicyDecision.Type.REQUIRE_VERIFICATION) {
+                    attachContinuation(uniqueId, () -> completeVerifiedAuthentication(
+                            uniqueId, prepared.session, verified, UserAuthenticatedEvent.Cause.PASSWORD));
+                    return completedOperation(verified, AuthResult.ADDITIONAL_VERIFICATION_REQUIRED);
+                }
+                return async(() -> authenticate(uniqueId, prepared.session, UserAuthenticatedEvent.Cause.PASSWORD))
+                        .thenApply(result -> finishOperation(verified, result));
+            });
+        }).toCompletableFuture();
     }
 
     @Override
@@ -216,7 +343,7 @@ public final class AuthService implements AuthApi {
         if (uniqueId == null) {
             return CompletableFuture.completedFuture(AuthResult.NOT_JOINED);
         }
-        return async(() -> {
+        return guarded(AuthOperation.LOGOUT, uniqueId, () -> {
             Session session = sessions.get(uniqueId);
             if (session == null) {
                 return AuthResult.NOT_JOINED;
@@ -224,7 +351,12 @@ public final class AuthService implements AuthApi {
             if (session.status != AuthStatus.AUTHENTICATED) {
                 return AuthResult.NOT_AUTHENTICATED;
             }
-            replaceSession(uniqueId, session, new Session(session.generation, session.record, AuthStatus.UNAUTHENTICATED));
+            pendingTotpSetups.remove(uniqueId);
+            repository.updateLastIp(session.record.uniqueId(), null);
+            AuthRecord record = withLastIp(session.record, null);
+            replaceSession(uniqueId, session, new Session(
+                    session.generation, record, AuthStatus.UNAUTHENTICATED, session.ip));
+            events.publish(new UserLoggedOutEvent(uniqueId, record.realName()));
             return AuthResult.SUCCESS;
         });
     }
@@ -234,7 +366,7 @@ public final class AuthService implements AuthApi {
         if (uniqueId == null) {
             return CompletableFuture.completedFuture(AuthResult.NOT_JOINED);
         }
-        return async(() -> {
+        return guarded(AuthOperation.CHANGE_PASSWORD, uniqueId, () -> {
             Session session = sessions.get(uniqueId);
             if (session == null) {
                 return AuthResult.NOT_JOINED;
@@ -264,6 +396,7 @@ public final class AuthService implements AuthApi {
                     session.record.dialogPreference()
             );
             replaceSession(uniqueId, session, new Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip));
+            events.publish(new PasswordChangedEvent(uniqueId, record.realName(), false));
             return AuthResult.SUCCESS;
         });
     }
@@ -273,7 +406,10 @@ public final class AuthService implements AuthApi {
         if (uniqueId == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Player is not joined"));
         }
-        return async(() -> {
+        Session current = sessions.get(uniqueId);
+        return guardedValue(AuthOperationContext.user(AuthOperation.TOTP_SETUP, uniqueId,
+                current == null || current.record == null ? "" : current.record.realName(),
+                current == null ? null : current.ip), () -> {
             Session session = sessions.get(uniqueId);
             if (session == null || session.record == null || session.status != AuthStatus.AUTHENTICATED) {
                 throw new IllegalStateException("Player is not authenticated");
@@ -284,8 +420,8 @@ public final class AuthService implements AuthApi {
             if (session.record.totpSecret() != null && !session.record.totpSecret().isBlank()) {
                 throw new IllegalStateException("TOTP is already enabled");
             }
-            if (password != null && !password.isBlank()
-                    && !PasswordHasher.matches(password, session.record.passwordHash())) {
+            if (password == null || password.isBlank() || password.length() > settings.maxPasswordLength()
+                    || !PasswordHasher.matches(password, session.record.passwordHash())) {
                 throw new IllegalStateException("Invalid password");
             }
             String secret = totp.generateSecret();
@@ -294,71 +430,78 @@ public final class AuthService implements AuthApi {
                     totp.provisioningUri(issuer, session.record.realName(), secret),
                     totp.generateRecoveryCodes(features.recoveryCodesAmount())
             );
-            pendingTotpSetups.put(uniqueId, setup);
+            pendingTotpSetups.put(uniqueId, new PendingTotpSetup(
+                    session.generation, setup, clock.millis() + features.totpSetupLifetime().toMillis()));
+            events.publish(new TotpSetupStartedEvent(uniqueId, session.record.realName()));
             return setup;
         });
     }
 
     @Override
     public CompletableFuture<AuthResult> confirmTotpSetup(UUID uniqueId, String code) {
-        return async(() -> {
-            TotpSetup setup = pendingTotpSetups.get(uniqueId);
-            Session session = sessions.get(uniqueId);
-            if (setup == null || session == null) return AuthResult.TOTP_SETUP_REQUIRED;
-            if (!totp.verify(setup.secret(), code)) return AuthResult.TOTP_INVALID;
-            repository.updateTotpSecret(uniqueId, totp.encrypt(setup.secret()));
-            totp.saveRecoveryCodes(uniqueId, setup.recoveryCodes());
-            String encryptedSecret = totp.encrypt(setup.secret());
-            AuthRecord record = withTotp(session.record, encryptedSecret);
-            replaceSession(uniqueId, session, new Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip));
-            pendingTotpSetups.remove(uniqueId);
-            return AuthResult.TOTP_ENABLED;
-        });
+        return guarded(AuthOperation.TOTP_VERIFY, uniqueId, () -> confirmPendingTotpSetup(uniqueId, code));
     }
 
     @Override
     public CompletableFuture<AuthResult> verifyTotp(UUID uniqueId, String code) {
+        // `/totp verify` also confirms a freshly created setup.
+        if (pendingTotpSetups.containsKey(uniqueId)) return confirmTotpSetup(uniqueId, code);
+        Session initial = sessions.get(uniqueId);
+        AuthOperationContext request = new AuthOperationContext(AuthOperation.TOTP_VERIFY,
+                ru.privatenull.pnauth.extension.AuthPhase.REQUEST, uniqueId,
+                initial == null || initial.record == null ? "" : initial.record.realName(),
+                initial == null ? null : initial.ip, java.util.Map.of());
+        PreAuthOperationEvent preEvent = new PreAuthOperationEvent(request);
+        events.publish(preEvent);
+        if (preEvent.cancelled()) return completedOperation(request, AuthResult.OPERATION_DENIED);
         return async(() -> {
             Session session = sessions.get(uniqueId);
-            if (session == null || session.record == null) return AuthResult.NOT_JOINED;
-            if (session.status != AuthStatus.TOTP_PENDING) return AuthResult.TOTP_NOT_ENABLED;
-            String secret = totp.decrypt(session.record.totpSecret());
-            boolean valid = totp.verify(secret, code) || totp.consumeRecoveryCode(uniqueId, code);
+            if (session == null || session.record == null) return new TotpPreparation(null, AuthResult.NOT_JOINED);
+            if (session.status != AuthStatus.TOTP_PENDING) return new TotpPreparation(null, AuthResult.TOTP_NOT_ENABLED);
+            UUID attemptKey = attemptKey(uniqueId, session);
+            if (isTotpLocked(attemptKey)) return new TotpPreparation(null, AuthResult.LOCKED_OUT);
+            boolean valid = verifyTotpOrRecoveryCode(session.record.uniqueId(), session.record.totpSecret(), code);
             if (!valid) {
-                AttemptState state = failedTotpAttempts.computeIfAbsent(uniqueId, ignored -> new AttemptState());
-                synchronized (state) {
-                    state.failures++;
-                    if (state.failures >= features.totpMaxAttempts()) {
-                        Session pending = sessions.get(uniqueId);
-                        if (features.banOnFailedLogin() && pending != null) {
-                            bans.ban(pending.ip, features.banDuration());
-                        }
-                        return AuthResult.LOCKED_OUT;
-                    }
-                }
-                return AuthResult.TOTP_INVALID;
+                return new TotpPreparation(null, failedTotp(attemptKey, session));
             }
-            failedTotpAttempts.remove(uniqueId);
-            return authenticate(uniqueId, session);
-        });
+            failedTotpAttempts.remove(attemptKey);
+            return new TotpPreparation(session, null);
+        }).thenCompose(prepared -> {
+            if (prepared.result != null) return completedOperation(request, prepared.result);
+            AuthOperationContext verified = request.at(ru.privatenull.pnauth.extension.AuthPhase.CREDENTIAL_VERIFIED);
+            return extensions.evaluate(verified).thenCompose(decision -> {
+                if (decision.type() == AuthPolicyDecision.Type.DENY) return completedOperation(verified, AuthResult.OPERATION_DENIED);
+                if (decision.type() == AuthPolicyDecision.Type.REQUIRE_VERIFICATION) {
+                    attachContinuation(uniqueId, () -> completeVerifiedAuthentication(
+                            uniqueId, prepared.session, verified, UserAuthenticatedEvent.Cause.TOTP));
+                    return completedOperation(verified, AuthResult.ADDITIONAL_VERIFICATION_REQUIRED);
+                }
+                return async(() -> authenticate(uniqueId, prepared.session, UserAuthenticatedEvent.Cause.TOTP))
+                        .thenApply(result -> finishOperation(verified, result));
+            });
+        }).toCompletableFuture();
     }
 
     @Override
     public CompletableFuture<AuthResult> disableTotp(UUID uniqueId, String password, String code) {
-        return async(() -> {
+        return guarded(AuthOperation.TOTP_DISABLE, uniqueId, () -> {
             Session session = sessions.get(uniqueId);
             if (session == null || session.record == null) return AuthResult.NOT_JOINED;
+            if (session.status != AuthStatus.AUTHENTICATED) return AuthResult.NOT_AUTHENTICATED;
             if (session.record.totpSecret() == null || session.record.totpSecret().isBlank()) return AuthResult.TOTP_NOT_ENABLED;
-            if (password != null && !password.isBlank() && !PasswordHasher.matches(password, session.record.passwordHash())) {
+            UUID attemptKey = attemptKey(uniqueId, session);
+            if (isTotpLocked(attemptKey)) return AuthResult.LOCKED_OUT;
+            if (password == null || password.isBlank() || password.length() > settings.maxPasswordLength()
+                    || !PasswordHasher.matches(password, session.record.passwordHash())) {
                 return AuthResult.INVALID_PASSWORD;
             }
-            String secret = totp.decrypt(session.record.totpSecret());
-            if (!totp.verify(secret, code) && !totp.consumeRecoveryCode(uniqueId, code)) {
-                return AuthResult.TOTP_INVALID;
+            if (!verifyTotpOrRecoveryCode(session.record.uniqueId(), session.record.totpSecret(), code)) {
+                return failedTotp(attemptKey, session);
             }
-            repository.updateTotpSecret(uniqueId, null);
-            repository.clearRecoveryCodes(uniqueId);
+            totp.clearTotpData(session.record.uniqueId());
+            failedTotpAttempts.remove(attemptKey);
             replaceSession(uniqueId, session, new Session(session.generation, withTotp(session.record, null), session.status, session.ip));
+            events.publish(new TotpStateChangedEvent(uniqueId, session.record.realName(), false));
             return AuthResult.TOTP_DISABLED;
         });
     }
@@ -391,9 +534,10 @@ public final class AuthService implements AuthApi {
 
     @Override
     public CompletableFuture<AuthResult> togglePremium(UUID uniqueId) {
-        return async(() -> {
+        return guarded(AuthOperation.PREMIUM_CHANGE, uniqueId, () -> {
             Session session = sessions.get(uniqueId);
             if (session == null || session.record == null) return AuthResult.NOT_JOINED;
+            if (session.status != AuthStatus.AUTHENTICATED) return AuthResult.NOT_AUTHENTICATED;
             boolean premium = !session.record.premium();
             repository.updatePremium(uniqueId, premium);
             AuthRecord record = new AuthRecord(
@@ -402,17 +546,24 @@ public final class AuthService implements AuthApi {
                     session.record.lastIp(), session.record.totpSecret(), session.record.dialogPreference()
             );
             replaceSession(uniqueId, session, new Session(session.generation, record, session.status, session.ip));
+            events.publish(new PremiumStateChangedEvent(uniqueId, record.realName(), premium));
             return AuthResult.SUCCESS;
         });
     }
 
     @Override
     public CompletableFuture<AuthResult> unregister(String username) {
-        return async(() -> repository.findByUsername(normalizeUsername(username))
+        String normalizedUsername = normalizeUsername(username);
+        return guarded(new AuthOperationContext(AuthOperation.ADMIN_UNREGISTER, null, username, null, java.util.Map.of()),
+                () -> repository.findByUsername(normalizedUsername)
                 .map(record -> {
                     repository.deleteByUniqueId(record.uniqueId());
-                    sessions.remove(record.uniqueId());
+                    sessions.entrySet().removeIf(entry -> entry.getValue().record != null
+                            && entry.getValue().record.username().equals(normalizedUsername));
                     joining.remove(record.uniqueId());
+                    failedAttempts.remove(record.uniqueId());
+                    failedTotpAttempts.remove(record.uniqueId());
+                    events.publish(new UserUnregisteredEvent(record.uniqueId(), record.realName(), true));
                     return AuthResult.SUCCESS;
                 })
                 .orElse(AuthResult.PLAYER_NOT_FOUND));
@@ -420,22 +571,30 @@ public final class AuthService implements AuthApi {
 
     @Override
     public CompletableFuture<AuthResult> unregister(UUID uniqueId, String password) {
-        return async(() -> {
+        return guarded(AuthOperation.UNREGISTER, uniqueId, () -> {
             Session session = sessions.get(uniqueId);
             if (session == null || session.record == null) return AuthResult.NOT_JOINED;
-            if (password == null || !PasswordHasher.matches(password, session.record.passwordHash())) {
-                return AuthResult.INVALID_PASSWORD;
+            if (session.status != AuthStatus.AUTHENTICATED) return AuthResult.NOT_AUTHENTICATED;
+            UUID attemptKey = attemptKey(uniqueId, session);
+            if (isLocked(attemptKey)) return AuthResult.LOCKED_OUT;
+            if (password == null || password.length() > settings.maxPasswordLength()
+                    || !PasswordHasher.matches(password, session.record.passwordHash())) {
+                return failedLogin(attemptKey, session);
             }
             repository.deleteByUniqueId(uniqueId);
             sessions.remove(uniqueId);
             joining.remove(uniqueId);
+            pendingTotpSetups.remove(uniqueId);
+            failedAttempts.remove(uniqueId);
+            failedTotpAttempts.remove(uniqueId);
+            events.publish(new UserUnregisteredEvent(uniqueId, session.record.realName(), false));
             return AuthResult.SUCCESS;
         });
     }
 
     @Override
     public CompletableFuture<AuthResult> adminChangePassword(String username, String newPassword) {
-        return async(() -> {
+        return guarded(new AuthOperationContext(AuthOperation.ADMIN_CHANGE_PASSWORD, null, username, null, java.util.Map.of()), () -> {
             AuthRecord record = repository.findByUsername(normalizeUsername(username)).orElse(null);
             if (record == null) return AuthResult.PLAYER_NOT_FOUND;
             if (!settings.isPasswordValid(newPassword)) return AuthResult.INVALID_PASSWORD_FORMAT;
@@ -450,13 +609,14 @@ public final class AuthService implements AuthApi {
                 );
                 replaceSession(record.uniqueId(), session, new Session(session.generation, updated, session.status, session.ip));
             }
+            events.publish(new PasswordChangedEvent(record.uniqueId(), record.realName(), true));
             return AuthResult.SUCCESS;
         });
     }
 
     @Override
     public CompletableFuture<AuthResult> forceRegister(String username, String password) {
-        return async(() -> {
+        return guarded(new AuthOperationContext(AuthOperation.ADMIN_FORCE_REGISTER, null, username, null, java.util.Map.of()), () -> {
             String normalizedUsername = normalizeUsername(username);
             if (!settings.isUsernameValid(normalizedUsername)) return AuthResult.INVALID_USERNAME;
             if (!settings.isPasswordValid(password)) return AuthResult.INVALID_PASSWORD_FORMAT;
@@ -469,24 +629,29 @@ public final class AuthService implements AuthApi {
                     uniqueId, normalizedUsername, username, PasswordHasher.hash(password, settings), clock.millis(),
                     null, false, null, null, null
             );
-            return repository.create(record) ? AuthResult.SUCCESS : AuthResult.ALREADY_REGISTERED;
+            if (!repository.create(record)) return AuthResult.ALREADY_REGISTERED;
+            events.publish(new UserRegisteredEvent(uniqueId, record.realName(), null, true));
+            return AuthResult.SUCCESS;
         });
     }
 
     @Override
     public CompletableFuture<AuthResult> forceLogin(String username) {
-        return async(() -> sessions.values().stream()
-                .filter(session -> session.record != null && session.record.username().equalsIgnoreCase(username))
+        return guarded(new AuthOperationContext(AuthOperation.ADMIN_FORCE_LOGIN, null, username, null, java.util.Map.of()),
+                () -> sessions.entrySet().stream()
+                .filter(entry -> entry.getValue().record != null
+                        && entry.getValue().record.username().equalsIgnoreCase(username))
                 .findFirst()
-                .map(session -> session.status == AuthStatus.AUTHENTICATED
+                .map(entry -> entry.getValue().status == AuthStatus.AUTHENTICATED
                         ? AuthResult.ALREADY_AUTHENTICATED
-                        : authenticate(session.record.uniqueId(), session))
+                        : authenticate(entry.getKey(), entry.getValue(), UserAuthenticatedEvent.Cause.ADMIN))
                 .orElse(AuthResult.PLAYER_NOT_FOUND));
     }
 
     @Override
     public CompletableFuture<AuthResult> togglePremium(String username) {
-        return async(() -> repository.findByUsername(normalizeUsername(username))
+        return guarded(new AuthOperationContext(AuthOperation.PREMIUM_CHANGE, null, username, null, java.util.Map.of()),
+                () -> repository.findByUsername(normalizeUsername(username))
                 .map(record -> {
                     boolean premium = !record.premium();
                     repository.updatePremium(record.uniqueId(), premium);
@@ -499,6 +664,7 @@ public final class AuthService implements AuthApi {
                         );
                         replaceSession(record.uniqueId(), session, new Session(session.generation, updated, session.status, session.ip));
                     }
+                    events.publish(new PremiumStateChangedEvent(record.uniqueId(), record.realName(), premium));
                     return AuthResult.SUCCESS;
                 })
                 .orElse(AuthResult.PLAYER_NOT_FOUND));
@@ -506,7 +672,16 @@ public final class AuthService implements AuthApi {
 
     @Override
     public CompletableFuture<AdmissionDecision> checkAdmission(String username, String ip, int onlineAccountsFromIp) {
-        return async(() -> {
+        AuthOperationContext context = new AuthOperationContext(AuthOperation.ADMISSION, null, username, ip,
+                java.util.Map.of("onlineAccountsFromIp", Integer.toString(onlineAccountsFromIp)));
+        PreAuthOperationEvent preEvent = new PreAuthOperationEvent(context);
+        events.publish(preEvent);
+        if (preEvent.cancelled()) return completedAdmission(username, ip,
+                new AdmissionDecision(false, false, AdmissionDecision.Reason.POLICY_DENIED));
+        return extensions.evaluate(context).thenCompose(policy -> {
+            if (policy.type() != AuthPolicyDecision.Type.ALLOW) return completedAdmission(username, ip,
+                    new AdmissionDecision(false, false, AdmissionDecision.Reason.POLICY_DENIED));
+            return async(() -> {
             if (bans.isBanned(ip)) {
                 return new AdmissionDecision(false, false, AdmissionDecision.Reason.BANNED);
             }
@@ -520,13 +695,58 @@ public final class AuthService implements AuthApi {
             }
             return new AdmissionDecision(true, record != null && record.premium() && features.premiumEnabled(),
                     AdmissionDecision.Reason.ALLOWED);
-        });
+            }).thenApply(decision -> {
+                events.publish(new AdmissionEvaluatedEvent(username, ip, decision));
+                return decision;
+            });
+        }).toCompletableFuture();
+    }
+
+    private CompletableFuture<AdmissionDecision> completedAdmission(
+            String username, String ip, AdmissionDecision decision
+    ) {
+        events.publish(new AdmissionEvaluatedEvent(username, ip, decision));
+        return CompletableFuture.completedFuture(decision);
     }
 
     @Override
     public DialogPreference dialogPreference(UUID uniqueId) {
         Session session = sessions.get(uniqueId);
         return session == null || session.record == null ? DialogPreference.AUTO : session.record.dialogPreference();
+    }
+
+    @Override
+    public AuthEventBus events() {
+        return events;
+    }
+
+    @Override
+    public AuthExtensionRegistry extensions() {
+        return extensions;
+    }
+
+    @Override
+    public PlayerDisplay display() {
+        return display;
+    }
+
+    public void installDisplay(PlayerDisplay display) {
+        this.display = java.util.Objects.requireNonNull(display, "display");
+    }
+
+    @Override
+    public PnPlatform platform() {
+        return platform;
+    }
+
+    /** Installs the player facade supplied by the active server adapter. */
+    public void installPlatform(PnPlatform platform) {
+        this.platform = java.util.Objects.requireNonNull(platform, "platform");
+    }
+
+    @Override
+    public ServiceRegistry services() {
+        return services;
     }
 
     @Override
@@ -543,6 +763,7 @@ public final class AuthService implements AuthApi {
                     session.record.lastIp(), session.record.totpSecret(), selected
             );
             replaceSession(uniqueId, session, new Session(session.generation, record, session.status, session.ip));
+            events.publish(new DialogPreferenceChangedEvent(uniqueId, record.realName(), selected));
             return AuthResult.DIALOG_PREFERENCE_UPDATED;
         });
     }
@@ -562,6 +783,8 @@ public final class AuthService implements AuthApi {
 
     @Override
     public void close() {
+        platform.tasks().cancelAll();
+        platform.players().forEach(player -> platform.dialogs().closeAll(player.uniqueId()));
         executor.shutdownNow();
         repository.close();
         sessions.clear();
@@ -569,23 +792,85 @@ public final class AuthService implements AuthApi {
         failedAttempts.clear();
         failedTotpAttempts.clear();
         pendingTotpSetups.clear();
+        verificationContinuations.clear();
+        verificationDisplays.values().forEach(handles -> handles.forEach(DisplayHandle::close));
+        verificationDisplays.clear();
         bans.clear();
     }
 
-    private AuthResult failedLogin(UUID uniqueId) {
-        AttemptState state = failedAttempts.computeIfAbsent(uniqueId, ignored -> new AttemptState());
+    private AuthResult failedLogin(UUID attemptKey, Session session) {
+        AttemptState state = failedAttempts.computeIfAbsent(attemptKey, ignored -> new AttemptState());
         synchronized (state) {
             state.failures++;
             if (state.failures >= settings.maxLoginAttempts()) {
                 state.lockedUntil = clock.millis() + settings.lockoutDuration().toMillis();
-                Session session = sessions.get(uniqueId);
-                if (features.banOnFailedLogin() && session != null) {
+                if (features.banOnFailedLogin()) {
                     bans.ban(session.ip, features.banDuration());
                 }
                 return AuthResult.LOCKED_OUT;
             }
             return AuthResult.INVALID_PASSWORD;
         }
+    }
+
+    private AuthResult confirmPendingTotpSetup(UUID uniqueId, String code) {
+        PendingTotpSetup pending = pendingTotpSetups.get(uniqueId);
+        Session session = sessions.get(uniqueId);
+        if (pending == null || session == null || session.record == null || session.status != AuthStatus.AUTHENTICATED
+                || pending.generation != session.generation || pending.expiresAt <= clock.millis()) {
+            if (pending != null) pendingTotpSetups.remove(uniqueId, pending);
+            return AuthResult.TOTP_SETUP_REQUIRED;
+        }
+        synchronized (pending) {
+            if (pendingTotpSetups.get(uniqueId) != pending) return AuthResult.TOTP_SETUP_REQUIRED;
+            if (!totp.verify(pending.setup.secret(), code)) return failedTotp(attemptKey(uniqueId, session), session);
+            String encryptedSecret = totp.encrypt(pending.setup.secret());
+            totp.replaceTotpData(uniqueId, encryptedSecret, pending.setup.recoveryCodes());
+            AuthRecord record = withTotp(session.record, encryptedSecret);
+            replaceSession(uniqueId, session, new Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip));
+            pendingTotpSetups.remove(uniqueId, pending);
+            events.publish(new TotpStateChangedEvent(uniqueId, record.realName(), true));
+            return AuthResult.TOTP_ENABLED;
+        }
+    }
+
+    private boolean isTotpLocked(UUID uniqueId) {
+        AttemptState state = failedTotpAttempts.get(uniqueId);
+        if (state == null) return false;
+        synchronized (state) {
+            if (state.lockedUntil != 0 && state.lockedUntil <= clock.millis()) {
+                failedTotpAttempts.remove(uniqueId, state);
+                return false;
+            }
+            return state.lockedUntil != 0;
+        }
+    }
+
+    private AuthResult failedTotp(UUID attemptKey, Session session) {
+        AttemptState state = failedTotpAttempts.computeIfAbsent(attemptKey, ignored -> new AttemptState());
+        synchronized (state) {
+            state.failures++;
+            if (state.failures >= features.totpMaxAttempts()) {
+                state.lockedUntil = clock.millis() + features.totpLockoutDuration().toMillis();
+                if (features.banOnFailedLogin()) {
+                    bans.ban(session.ip, features.banDuration());
+                }
+                return AuthResult.LOCKED_OUT;
+            }
+            return AuthResult.TOTP_INVALID;
+        }
+    }
+
+    private boolean verifyTotpOrRecoveryCode(UUID uniqueId, String encryptedSecret, String code) {
+        try {
+            if (encryptedSecret != null && !encryptedSecret.isBlank()
+                    && totp.verify(totp.decrypt(encryptedSecret), code)) {
+                return true;
+            }
+        } catch (RuntimeException ignored) {
+            // A damaged encrypted secret must not make recovery codes unusable.
+        }
+        return totp.consumeRecoveryCode(uniqueId, code);
     }
 
     private boolean isLocked(UUID uniqueId) {
@@ -610,19 +895,126 @@ public final class AuthService implements AuthApi {
         return CompletableFuture.supplyAsync(supplier, executor);
     }
 
-    private AuthResult authenticate(UUID uniqueId, Session session) {
-        failedAttempts.remove(uniqueId);
+    private CompletableFuture<AuthResult> guarded(
+            AuthOperation operation, UUID uniqueId, Supplier<AuthResult> operationBody
+    ) {
+        Session session = uniqueId == null ? null : sessions.get(uniqueId);
+        String username = session == null || session.record == null ? "" : session.record.realName();
+        String ip = session == null ? null : session.ip;
+        return guarded(AuthOperationContext.user(operation, uniqueId, username, ip), operationBody);
+    }
+
+    private CompletableFuture<AuthResult> guarded(
+            AuthOperationContext context, Supplier<AuthResult> operationBody
+    ) {
+        PreAuthOperationEvent preEvent = new PreAuthOperationEvent(context);
+        events.publish(preEvent);
+        if (preEvent.cancelled()) {
+            return completedOperation(context, AuthResult.OPERATION_DENIED);
+        }
+        return extensions.evaluate(context).thenCompose(decision -> {
+            if (decision.type() == AuthPolicyDecision.Type.DENY) {
+                return completedOperation(context, AuthResult.OPERATION_DENIED);
+            }
+            if (decision.type() == AuthPolicyDecision.Type.REQUIRE_VERIFICATION) {
+                return completedOperation(context, AuthResult.ADDITIONAL_VERIFICATION_REQUIRED);
+            }
+            return async(operationBody).thenApply(result -> finishOperation(context, result));
+        }).toCompletableFuture();
+    }
+
+    private CompletableFuture<AuthResult> completedOperation(AuthOperationContext context, AuthResult result) {
+        finishOperation(context, result);
+        return CompletableFuture.completedFuture(result);
+    }
+
+    private AuthResult finishOperation(AuthOperationContext context, AuthResult result) {
+        events.publish(new AuthOperationCompletedEvent(context, result));
+        publishAuthenticationAttempt(context, result);
+        return result;
+    }
+
+    private <T> CompletableFuture<T> guardedValue(AuthOperationContext context, Supplier<T> operationBody) {
+        PreAuthOperationEvent preEvent = new PreAuthOperationEvent(context);
+        events.publish(preEvent);
+        if (preEvent.cancelled()) return CompletableFuture.failedFuture(new AuthOperationRejectedException(
+                AuthResult.OPERATION_DENIED, preEvent.cancellationReason()));
+        return extensions.evaluate(context).thenCompose(decision -> {
+            if (decision.type() == AuthPolicyDecision.Type.DENY) {
+                return CompletableFuture.<T>failedFuture(new AuthOperationRejectedException(
+                        AuthResult.OPERATION_DENIED, decision.message()));
+            }
+            if (decision.type() == AuthPolicyDecision.Type.REQUIRE_VERIFICATION) {
+                return CompletableFuture.<T>failedFuture(new AuthOperationRejectedException(
+                        AuthResult.ADDITIONAL_VERIFICATION_REQUIRED, decision.message()));
+            }
+            return async(operationBody);
+        }).toCompletableFuture();
+    }
+
+    private void publishAuthenticationAttempt(AuthOperationContext context, AuthResult result) {
+        if (context.uniqueId() != null && (context.operation() == AuthOperation.LOGIN
+                || context.operation() == AuthOperation.TOTP_VERIFY)) {
+            events.publish(new AuthenticationAttemptEvent(context.uniqueId(), context.username(),
+                    context.operation(), result));
+        }
+    }
+
+    private void attachContinuation(UUID uniqueId, Runnable continuation) {
+        extensions.pending(uniqueId).ifPresent(ticket -> verificationContinuations.put(ticket.id(), continuation));
+    }
+
+    private void completeVerifiedAuthentication(UUID uniqueId, Session expected, AuthOperationContext context,
+                                                UserAuthenticatedEvent.Cause cause) {
+        if (extensions.evaluate(context).toCompletableFuture().join().type() != AuthPolicyDecision.Type.ALLOW) return;
+        Session current = sessions.get(uniqueId);
+        if (current == null || current.generation != expected.generation || current.status == AuthStatus.AUTHENTICATED) return;
+        AuthResult result = authenticate(uniqueId, current, cause);
+        finishOperation(context, result);
+    }
+
+    private AuthResult authenticate(UUID uniqueId, Session session, UserAuthenticatedEvent.Cause cause) {
+        failedAttempts.remove(attemptKey(uniqueId, session));
+        AuthRecord identity = session.record.uniqueId().equals(uniqueId)
+                ? session.record : reassignIdentity(session.record, uniqueId);
         long now = clock.millis();
         repository.updateLastLogin(uniqueId, now);
         if (session.ip != null) repository.updateLastIp(uniqueId, session.ip);
         AuthRecord record = new AuthRecord(
-                session.record.uniqueId(), session.record.username(), session.record.realName(),
-                session.record.passwordHash(), session.record.registeredAt(), now,
-                session.record.premium(), session.record.registeredIp(), session.record.lastIp(), session.record.totpSecret(),
-                session.record.dialogPreference()
+                identity.uniqueId(), identity.username(), identity.realName(),
+                identity.passwordHash(), identity.registeredAt(), now,
+                identity.premium(), identity.registeredIp(), session.ip, identity.totpSecret(),
+                identity.dialogPreference()
         );
         replaceSession(uniqueId, session, new Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip));
+        events.publish(new UserAuthenticatedEvent(uniqueId, record.realName(), cause));
         return AuthResult.SUCCESS;
+    }
+
+    private Session upgradePasswordHash(UUID uniqueId, Session session, String password) {
+        if (!PasswordHasher.needsRehash(session.record.passwordHash(), settings)) {
+            return session;
+        }
+        PasswordHash upgraded = PasswordHasher.hash(password, settings);
+        repository.updatePassword(session.record.uniqueId(), upgraded);
+        Session replacement = new Session(
+                session.generation,
+                session.record.withPasswordHash(upgraded),
+                session.status,
+                session.ip
+        );
+        return sessions.replace(uniqueId, session, replacement) ? replacement : session;
+    }
+
+    private AuthRecord reassignIdentity(AuthRecord record, UUID uniqueId) {
+        if (!repository.reassignUniqueId(record.uniqueId(), uniqueId)) {
+            throw new IllegalStateException("Could not bind account to the current player UUID");
+        }
+        return new AuthRecord(
+                uniqueId, record.username(), record.realName(), record.passwordHash(), record.registeredAt(),
+                record.lastLoginAt(), record.premium(), record.registeredIp(), record.lastIp(), record.totpSecret(),
+                record.dialogPreference()
+        );
     }
 
     private static AuthRecord withTotp(AuthRecord record, String secret) {
@@ -631,6 +1023,18 @@ public final class AuthService implements AuthApi {
                 record.lastLoginAt(), record.premium(), record.registeredIp(), record.lastIp(), secret,
                 record.dialogPreference()
         );
+    }
+
+    private static AuthRecord withLastIp(AuthRecord record, String lastIp) {
+        return new AuthRecord(
+                record.uniqueId(), record.username(), record.realName(), record.passwordHash(), record.registeredAt(),
+                record.lastLoginAt(), record.premium(), record.registeredIp(), lastIp, record.totpSecret(),
+                record.dialogPreference()
+        );
+    }
+
+    private static UUID attemptKey(UUID uniqueId, Session session) {
+        return session.record == null ? uniqueId : session.record.uniqueId();
     }
 
     private static byte[] randomKey() {
@@ -647,6 +1051,15 @@ public final class AuthService implements AuthApi {
         private Session(long generation, AuthRecord record, AuthStatus status) {
             this(generation, record, status, null);
         }
+    }
+
+    private record PendingTotpSetup(long generation, TotpSetup setup, long expiresAt) {
+    }
+
+    private record LoginPreparation(Session session, AuthResult result) {
+    }
+
+    private record TotpPreparation(Session session, AuthResult result) {
     }
 
     private static final class AttemptState {

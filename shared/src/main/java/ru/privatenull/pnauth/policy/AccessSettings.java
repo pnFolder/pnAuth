@@ -19,7 +19,7 @@ public record AccessSettings(
         return new AccessSettings(
                 true,
                 Set.of("auth", "pnauth", "register", "reg", "login", "l", "logout",
-                        "changepassword", "changepass", "totp", "2fa", "premium", "status")
+                        "changepassword", "changepass", "totp", "2fa", "status")
         );
     }
 

@@ -26,6 +26,6 @@ public record HashSettings(
     }
 
     public static HashSettings defaults() {
-        return new HashSettings(HashAlgorithm.PBKDF2, 120_000, 12, 2, 65_536, 1);
+        return new HashSettings(HashAlgorithm.PBKDF2, 600_000, 12, 2, 65_536, 1);
     }
 }

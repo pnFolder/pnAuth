@@ -6,6 +6,7 @@ public record AdmissionDecision(boolean allowed, boolean forceOnlineMode, Reason
         ONLINE_IP_LIMIT,
         REGISTERED_IP_LIMIT,
         BANNED,
-        DATABASE_ERROR
+        DATABASE_ERROR,
+        POLICY_DENIED
     }
 }

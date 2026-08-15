@@ -2,27 +2,81 @@ plugins {
     id 'com.gradleup.shadow'
 }
 
+def pluginVersion = version.toString()
+def generatedSources = layout.buildDirectory.dir('generated/sources/pnauth')
+
+configurations.runtimeClasspath {
+    exclude group: 'net.kyori', module: 'adventure-api'
+    exclude group: 'net.kyori', module: 'adventure-key'
+    exclude group: 'net.kyori', module: 'examination-api'
+    exclude group: 'net.kyori', module: 'examination-string'
+}
+
 sourceSets {
     main {
         java {
             srcDirs = [
+                    file('src/main/java'),
                     file('../bungeecord/src/main/java'),
-                    file('../velocity/src/main/java')
+                    file('../velocity/src/main/java'),
+                    file('../paper/src/main/java'),
+                    generatedSources
             ]
         }
         resources {
-            srcDirs = [file('../bungeecord/src/main/resources')]
+            srcDirs = [file('../bungeecord/src/main/resources'), file('../paper/src/main/resources')]
         }
     }
 }
 
+def generateBuildInfo = tasks.register('generatePnAuthBuildInfo') {
+    inputs.property('pluginVersion', pluginVersion)
+    outputs.file(generatedSources.map { it.file('ru/privatenull/pnauth/velocity/PnAuthBuild.java') })
+    doLast {
+        File output = generatedSources.get().file('ru/privatenull/pnauth/velocity/PnAuthBuild.java').asFile
+        output.parentFile.mkdirs()
+        output.text = """package ru.privatenull.pnauth.velocity;
+
+/** Generated at build time from the Gradle project version. */
+public final class PnAuthBuild {
+    public static final String VERSION = \"${pluginVersion}\";
+
+    private PnAuthBuild() {
+    }
+}
+"""
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn generateBuildInfo
+}
+
+tasks.named('sourcesJar') {
+    dependsOn generateBuildInfo
+    inputs.files(generateBuildInfo)
+}
+
 dependencies {
-    compileOnly 'net.md-5:bungeecord-api:1.21-R0.3'
+    compileOnly 'net.md-5:bungeecord-api:1.21-R0.4'
+    compileOnly 'net.md-5:bungeecord-protocol:1.21-R0.4'
     compileOnly 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    compileOnly 'io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT'
+    compileOnly 'com.github.retrooper:packetevents-velocity:2.13.0'
+    compileOnly 'com.github.retrooper:packetevents-bungeecord:2.13.1-SNAPSHOT'
     annotationProcessor 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
     implementation project(':shared')
     implementation 'net.kyori:adventure-text-minimessage:4.17.0'
     implementation 'net.kyori:adventure-text-serializer-bungeecord:4.4.1'
+    implementation 'net.kyori:adventure-text-serializer-gson:4.17.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'net.md-5:bungeecord-api:1.21-R0.4'
+    testImplementation 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    testImplementation 'com.github.retrooper:packetevents-velocity:2.13.1-SNAPSHOT'
+    testImplementation 'net.kyori:adventure-api:4.26.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 }
 
 tasks.named('jar') {
@@ -30,16 +84,20 @@ tasks.named('jar') {
 }
 
 tasks.named('shadowJar') {
-    archiveFileName = "pnAuth-${project.version}.jar"
+    archiveFileName = "pnAuth-${pluginVersion}.jar"
     archiveClassifier = ''
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching('META-INF/services/**') {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     mergeServiceFiles()
     relocate 'org.yaml.snakeyaml', 'ru.privatenull.pnauth.libs.snakeyaml'
     relocate 'net.elytrium.serializer', 'ru.privatenull.pnauth.libs.serializer'
+    relocate 'com.fasterxml.jackson', 'ru.privatenull.pnauth.libs.jackson'
     manifest {
         attributes(
                 'Implementation-Title': 'pnAuth',
-                'Implementation-Version': project.version,
+                'Implementation-Version': pluginVersion,
                 'Implementation-Vendor': 'privatenull'
         )
     }
@@ -48,7 +106,10 @@ tasks.named('shadowJar') {
 processResources {
     filteringCharset = 'UTF-8'
     filesMatching('bungee.yml') {
-        expand(version: project.version)
+        expand(version: pluginVersion)
+    }
+    filesMatching('plugin.yml') {
+        expand(version: pluginVersion)
     }
 }
 

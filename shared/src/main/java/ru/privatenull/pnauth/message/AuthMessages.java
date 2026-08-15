@@ -36,7 +36,7 @@ public final class AuthMessages {
         MessageFileGenerator.ensureAll(directory);
         Path file = MessageFileGenerator.ensure(directory, locale);
         Object root = new Yaml().load(Files.readString(file, StandardCharsets.UTF_8));
-        Map<String, Object> flattened = new HashMap<>();
+        Map<String, Object> flattened = new HashMap<>(MessageCatalog.defaults(locale));
         flatten("", root, flattened);
         return new AuthMessages(flattened, format == null ? MessageFormat.LEGACY : format);
     }

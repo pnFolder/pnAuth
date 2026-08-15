@@ -1,0 +1,22 @@
+name: pnAuth
+main: ru.privatenull.pnauth.paper.PnAuthPaperPlugin
+version: '${version}'
+api-version: '1.20'
+folia-supported: true
+author: privatenull
+description: Extensible authentication and player API for Paper and Folia.
+commands:
+  auth:
+    aliases: [pnauth]
+  register:
+    aliases: [reg]
+  login:
+    aliases: [l]
+  logout: {}
+  changepassword:
+    aliases: [changepass]
+  totp:
+    aliases: [2fa]
+  unregister:
+    aliases: [unreg]
+  status: {}

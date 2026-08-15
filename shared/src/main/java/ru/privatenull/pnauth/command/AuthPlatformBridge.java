@@ -23,6 +23,16 @@ public interface AuthPlatformBridge {
 
     void accountDeleted(UUID uniqueId);
 
+    default void authenticated(String username) {
+    }
+
+    default void accountDeleted(String username) {
+    }
+
+    /** Sends a pre-rendered announcement to every player connected to the proxy. */
+    default void broadcast(String message) {
+    }
+
     default void apply(CommandEffect effect, UUID uniqueId) {
         switch (effect) {
             case AUTHENTICATED -> authenticated(uniqueId);

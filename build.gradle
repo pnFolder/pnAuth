@@ -16,6 +16,14 @@ allprojects {
             name = 'velocity'
             url = uri('https://repo.papermc.io/repository/maven-public/')
         }
+        maven {
+            name = 'codemc-releases'
+            url = uri('https://repo.codemc.io/repository/maven-releases/')
+        }
+        maven {
+            name = 'codemc-snapshots'
+            url = uri('https://repo.codemc.io/repository/maven-snapshots/')
+        }
     }
 }
 

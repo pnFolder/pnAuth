@@ -1,5 +1,7 @@
 package ru.privatenull.pnauth.limbo;
 
+import java.util.Optional;
+
 public interface LimboServer extends AutoCloseable {
     String id();
 
@@ -8,6 +10,10 @@ public interface LimboServer extends AutoCloseable {
     int port();
 
     LimboServerState state();
+
+    default Optional<LimboControl> control() {
+        return Optional.empty();
+    }
 
     void start() throws Exception;
 

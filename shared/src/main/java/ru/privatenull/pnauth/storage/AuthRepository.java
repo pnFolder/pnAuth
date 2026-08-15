@@ -14,6 +14,11 @@ public interface AuthRepository extends AutoCloseable {
 
     boolean updateUsername(UUID uniqueId, String username);
 
+    /** Moves an account to the UUID currently assigned by the proxy. */
+    default boolean reassignUniqueId(UUID previousUniqueId, UUID currentUniqueId) {
+        return previousUniqueId.equals(currentUniqueId);
+    }
+
     void updateLastLogin(UUID uniqueId, long timestamp);
 
     void updatePassword(UUID uniqueId, PasswordHash passwordHash);
@@ -49,6 +54,19 @@ public interface AuthRepository extends AutoCloseable {
 
     default boolean consumeRecoveryCode(UUID uniqueId, String codeHash) {
         return false;
+    }
+
+    /** Replaces the encrypted TOTP secret and recovery-code hashes as one logical operation. */
+    default void replaceTotpData(UUID uniqueId, String encryptedSecret, List<String> recoveryCodeHashes) {
+        updateTotpSecret(uniqueId, encryptedSecret);
+        clearRecoveryCodes(uniqueId);
+        recoveryCodeHashes.forEach(thisCodeHash -> addRecoveryCode(uniqueId, thisCodeHash));
+    }
+
+    /** Removes the encrypted TOTP secret and all recovery-code hashes as one logical operation. */
+    default void clearTotpData(UUID uniqueId) {
+        updateTotpSecret(uniqueId, null);
+        clearRecoveryCodes(uniqueId);
     }
 
     @Override

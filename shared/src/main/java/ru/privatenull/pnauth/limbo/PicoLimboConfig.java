@@ -49,7 +49,7 @@ public final class PicoLimboConfig {
     }
 
     public static final class Forwarding {
-        public String method = "LEGACY";
+        public String method = "NONE";
         public String secret = "";
     }
 
