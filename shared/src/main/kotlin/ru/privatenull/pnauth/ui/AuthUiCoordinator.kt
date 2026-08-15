@@ -148,9 +148,9 @@ class AuthUiCoordinator(
             { credentials -> submit(player.uniqueId(), command, credentials, session) },
             { closeWithError(player.uniqueId(), messages.text("operation-error")) }
         )
+        clear(player.uniqueId())
         val handle = player.dialogs().show(player, form)
-        val previous = dialogs.put(player.uniqueId(), handle)
-        previous?.close()
+        dialogs[player.uniqueId()] = handle
     }
 
     private fun submit(

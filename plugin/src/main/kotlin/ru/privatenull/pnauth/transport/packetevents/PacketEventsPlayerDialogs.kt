@@ -186,8 +186,16 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private fun sendSafely(player: Any, packet: Any) {
         try {
             packets.playerManager.sendPacket(player, packet)
-        } catch (ignored: RuntimeException) {
-            // Disconnect events may run after PacketEvents has already detached the Netty channel.
+        } catch (exception: Throwable) {
+            try {
+                val user = packets.protocolManager.getUser(player)
+                if (user != null && packet is com.github.retrooper.packetevents.wrapper.PacketWrapper<*>) {
+                    user.sendPacket(packet)
+                    return
+                }
+            } catch (ignored: Throwable) {
+            }
+            diagnostics.accept("[dialogs] Warning: failed to send dialog packet: ${exception.javaClass.simpleName}: ${exception.message}")
         }
     }
 
