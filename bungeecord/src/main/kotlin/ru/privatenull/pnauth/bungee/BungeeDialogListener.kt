@@ -1,148 +1,214 @@
 package ru.privatenull.pnauth.bungee
 
 import net.kyori.adventure.text.Component
+import net.md_5.bungee.api.CommandSender
+import net.md_5.bungee.api.chat.BaseComponent
+import net.md_5.bungee.api.chat.ClickEvent
 import net.md_5.bungee.api.connection.ProxiedPlayer
 import net.md_5.bungee.api.event.PlayerDisconnectEvent
 import net.md_5.bungee.api.event.PostLoginEvent
 import net.md_5.bungee.api.event.ServerConnectedEvent
+import net.md_5.bungee.api.plugin.Command
 import net.md_5.bungee.api.plugin.Listener
 import net.md_5.bungee.api.plugin.Plugin
 import net.md_5.bungee.api.scheduler.ScheduledTask
 import net.md_5.bungee.event.EventHandler
 import ru.privatenull.pnauth.api.AuthApi
 import ru.privatenull.pnauth.api.AuthStatus
+import ru.privatenull.pnauth.command.AuthCommandRequest
 import ru.privatenull.pnauth.command.AuthCommandService
-import ru.privatenull.pnauth.command.CommandRegistry
 import ru.privatenull.pnauth.config.FeatureSettings
 import ru.privatenull.pnauth.config.ProxySettings
+import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
+import ru.privatenull.pnauth.dialog.DialogHandle
+import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.message.AuthMessages
 import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.ui.AuthUiCoordinator
-import ru.privatenull.pnauth.ui.AuthUiRenderer
+import ru.privatenull.pnauth.security.ClickCaptchaService
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import java.util.function.Consumer
 
-/** Bungee lifecycle bridge; all authentication UI behavior lives in shared. */
+/** Bungee lifecycle bridge; mirrors the working Java implementation exactly. */
 class BungeeDialogListener internal constructor(
     private val plugin: Plugin,
     private val auth: AuthApi,
-    commands: AuthCommandService,
+    private val commands: AuthCommandService,
     private val messages: AuthMessages,
-    features: FeatureSettings,
-    maxPasswordLength: Int,
-    private val settings: ProxySettings,
-    platform: PnPlatform,
-    commandRegistry: CommandRegistry
+    private val settings: FeatureSettings,
+    private val maxPasswordLength: Int,
+    private val proxySettings: ProxySettings,
+    private val platform: PnPlatform,
+    @Suppress("UNUSED_PARAMETER") commandRegistry: ru.privatenull.pnauth.command.CommandRegistry
 ) : Listener {
 
-    private val coordinator: AuthUiCoordinator = AuthUiCoordinator(
-        auth, commands, messages, features, maxPasswordLength,
-        settings.authServer, platform, object : AuthUiRenderer {
-            override fun render(key: String, replacements: Map<String, String>): Component {
-                return BungeeMessages.adventureComponent(messages.text(key, replacements), messages.format)
-            }
-
-            override fun renderText(text: String): Component {
-                return BungeeMessages.adventureComponent(text, messages.format)
-            }
-        }, commandRegistry,
-        Consumer { message -> plugin.logger.info(message) }
-    )
-
+    private val dialogs: PlayerDialogs = platform.dialogs()
+    private val captcha = ClickCaptchaService(settings.captcha)
     private val pending: MutableMap<UUID, ScheduledTask> = ConcurrentHashMap()
+    private val activeDialogs: MutableMap<UUID, DialogHandle> = ConcurrentHashMap()
+    private val uiCommand = UiCommand()
+
+    init {
+        plugin.proxy.pluginManager.registerCommand(plugin, uiCommand)
+    }
 
     @EventHandler
     fun onServerConnected(event: ServerConnectedEvent) {
         val player = event.player
-        plugin.logger.info("[pnAuth-DEBUG] onServerConnected: player=${player.name}, connectedServer=${event.server.info.name}, configuredAuthServer=${settings.authServer}")
-        if (!event.server.info.name.equals(settings.authServer, ignoreCase = true)
+        if (!event.server.info.name.equals(proxySettings.authServer, ignoreCase = true)
             || auth.isAuthenticated(player.uniqueId)
         ) {
-            coordinator.clear(player.uniqueId)
-        } else scheduleWhenLoaded(player)
+            clearNativeDialog(player.uniqueId)
+        } else {
+            scheduleWhenLoaded(player)
+        }
     }
 
     @EventHandler
     fun onPostLogin(event: PostLoginEvent) {
-        plugin.logger.info("[pnAuth-DEBUG] onPostLogin: player=${event.player.name}")
         scheduleWhenLoaded(event.player)
     }
 
     @EventHandler
     fun onDisconnect(event: PlayerDisconnectEvent) {
         cancel(event.player.uniqueId)
-        coordinator.clearSession(event.player.uniqueId)
+        captcha.clear(event.player.uniqueId)
+        clearNativeDialog(event.player.uniqueId)
     }
 
     fun allowAuthenticationCommand(player: ProxiedPlayer): Boolean {
-        return coordinator.allowAuthenticationCommand(player.uniqueId)
+        return !requiresCaptcha(player)
     }
 
     fun requestCaptcha(player: ProxiedPlayer) {
-        coordinator.requestCaptcha(player.uniqueId)
+        if (requiresCaptcha(player)) sendCaptcha(player)
     }
 
     fun close() {
         pending.keys.forEach { cancel(it) }
-        coordinator.close()
+        activeDialogs.values.forEach { it.close() }
+        activeDialogs.clear()
+        captcha.clearAll()
+        plugin.proxy.pluginManager.unregisterCommand(uiCommand)
+    }
+
+    private fun execute(player: ProxiedPlayer, command: String, args: List<String>) {
+        clearNativeDialog(player.uniqueId)
+        commands.execute(
+            AuthCommandRequest(player.uniqueId, player.name, command, args) { player.hasPermission(it) }
+        ).thenAccept { result ->
+            if (auth.isAuthenticated(player.uniqueId)) {
+                player.sendMessage(*BungeeMessages.components(messages.text("auth.success"), messages.format))
+            } else if (player.isConnected) {
+                val error = if (result.isNullOrEmpty()) messages.text("operation-error") else result[0]
+                sendDialogError(player, error)
+            }
+        }
+    }
+
+    private fun show(player: ProxiedPlayer, register: Boolean) {
+        val command = if (register) "register" else "login"
+        val pnPlayer = platform.player(player.uniqueId)
+            .orElseThrow { IllegalStateException("Player left before the dialog was shown") }
+        val content = AuthDialogFormFactory.Content(
+            dialogComponent(if (register) "dialog.register.title" else "dialog.login.title"),
+            dialogComponent(if (register) "dialog.register.description" else "dialog.login.description"),
+            null,
+            dialogComponent(if (register) "dialog.register.password" else "dialog.login.password"),
+            if (register) dialogComponent("dialog.register.repeat") else null,
+            dialogComponent(if (register) "dialog.register.button" else "dialog.login.button")
+        )
+        val form = AuthDialogFormFactory.create(
+            if (register) AuthDialogFormFactory.Mode.REGISTER else AuthDialogFormFactory.Mode.LOGIN,
+            settings.repeatPasswordWhenRegister, maxPasswordLength, content,
+            { credentials ->
+                activeDialogs.remove(player.uniqueId)
+                if (!isOnAuthServer(player) || auth.isAuthenticated(player.uniqueId)) return@create
+                if (!captcha.verified(player.uniqueId)) {
+                    sendCaptcha(player)
+                    return@create
+                }
+                execute(
+                    player, command,
+                    if (command == "login") listOf(credentials.password)
+                    else listOf(credentials.password, credentials.confirmation)
+                )
+            },
+            { sendDialogError(player, messages.text("operation-error")) }
+        )
+        // Match Java order exactly: show first, then close previous — never clear before show
+        val handle = dialogs.show(pnPlayer, form)
+        val previous = activeDialogs.put(player.uniqueId, handle)
+        previous?.close()
+    }
+
+    private fun dialogComponent(key: String): Component {
+        return BungeeMessages.adventureComponent(messages.text(key), messages.format)
     }
 
     private fun scheduleWhenLoaded(player: ProxiedPlayer) {
         cancel(player.uniqueId)
-        coordinator.clear(player.uniqueId)
+        clearNativeDialog(player.uniqueId)
         val deadline = System.currentTimeMillis() + 30_000L
-        var attempts = 0
         val task = plugin.proxy.scheduler.schedule(plugin, {
             if (!player.isConnected) {
                 cancel(player.uniqueId)
                 return@schedule
             }
             val status = auth.status(player.uniqueId)
-            val server = player.server
-            plugin.logger.info("[pnAuth-DEBUG] scheduleWhenLoaded tick: player=${player.name}, attempts=$attempts, status=$status, server=${server?.info?.name}, configuredAuthServer=${settings.authServer}")
-            if (status == AuthStatus.NOT_LOADED || server == null
-                || !server.info.name.equals(settings.authServer, ignoreCase = true)
+            if (status == AuthStatus.NOT_LOADED || player.server == null
+                || !player.server.info.name.equals(proxySettings.authServer, ignoreCase = true)
             ) {
                 if (System.currentTimeMillis() >= deadline) {
                     cancel(player.uniqueId)
-                    coordinator.clear(player.uniqueId)
+                    clearNativeDialog(player.uniqueId)
                 }
                 return@schedule
             }
-            if (status == AuthStatus.AUTHENTICATED) {
-                cancel(player.uniqueId)
-                return@schedule
-            }
-            attempts++
+            cancel(player.uniqueId)
+            if (status == AuthStatus.AUTHENTICATED) return@schedule
             val protocol = player.pendingConnection.version
             val passwordStage = status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED
-            try {
-                plugin.logger.info("[pnAuth-DEBUG] Calling coordinator.show (attempt $attempts) for ${player.name}, status=$status, protocol=$protocol")
-                val shown = coordinator.show(player.uniqueId, status, protocol)
-                plugin.logger.info("[pnAuth-DEBUG] coordinator.show result for ${player.name}: $shown")
-                if (!shown) {
-                    cancel(player.uniqueId)
-                    sendCommandFallback(player, status, protocol, passwordStage)
-                } else if (attempts >= 3) {
-                    cancel(player.uniqueId)
-                }
-            } catch (exception: RuntimeException) {
-                cancel(player.uniqueId)
-                plugin.logger.warning(
-                    "Could not show authentication UI for ${player.name}; falling back to commands: ${exception.message}"
-                )
-                exception.printStackTrace()
+            val shouldShowDialog = passwordStage && auth.shouldUseDialog(player.uniqueId, protocol, true)
+            if (!shouldShowDialog) {
                 sendCommandFallback(player, status, protocol, passwordStage)
+                return@schedule
             }
-        }, 500, 1000, TimeUnit.MILLISECONDS)
+            if (!captcha.verified(player.uniqueId)) {
+                sendCaptcha(player)
+                return@schedule
+            }
+            try {
+                show(player, status == AuthStatus.UNREGISTERED)
+            } catch (exception: RuntimeException) {
+                plugin.logger.warning(
+                    "Could not show Bungee dialog for ${player.name}; falling back to commands: ${exception.message}"
+                )
+                sendCommandFallback(player, status, protocol, true)
+            }
+        }, 100, 100, TimeUnit.MILLISECONDS)
         pending[player.uniqueId] = task
     }
 
     private fun cancel(playerId: UUID) {
-        val task = pending.remove(playerId)
-        task?.cancel()
+        pending.remove(playerId)?.cancel()
+    }
+
+    private fun clearNativeDialog(playerId: UUID) {
+        activeDialogs.remove(playerId)?.close()
+    }
+
+    private fun requiresCaptcha(player: ProxiedPlayer): Boolean {
+        if (!isOnAuthServer(player) || captcha.verified(player.uniqueId)
+            || auth.isAuthenticated(player.uniqueId)
+        ) return false
+        val status = auth.status(player.uniqueId)
+        return status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED
+    }
+
+    private fun isOnAuthServer(player: ProxiedPlayer): Boolean {
+        return player.isConnected && player.server != null
+            && player.server.info.name.equals(proxySettings.authServer, ignoreCase = true)
     }
 
     private fun sendCommandFallback(
@@ -154,5 +220,75 @@ class BungeeDialogListener internal constructor(
         if (!passwordStage || auth.shouldUseCommandFallback(player.uniqueId, protocol, true)) {
             player.sendMessage(*BungeeMessages.components(messages.prompt(status), messages.format))
         }
+    }
+
+    private fun sendCaptcha(player: ProxiedPlayer) {
+        val challenge = captcha.issue(player.uniqueId)
+        player.sendMessage(*BungeeMessages.components(
+            messages.text("captcha.prompt", mapOf("answer" to challenge.answer)), messages.format
+        ))
+        val options = mutableListOf<BaseComponent>()
+        for (option in challenge.options) {
+            val button = BungeeMessages.components(
+                messages.text("captcha.option", mapOf("value" to option.label)), messages.format
+            )
+            for (part in button) {
+                part.clickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/_pnauthui captcha ${option.token}")
+                options.add(part)
+            }
+            options.add(net.md_5.bungee.api.chat.TextComponent(" "))
+        }
+        player.sendMessage(*options.toTypedArray())
+    }
+
+    private fun sendDialogError(player: ProxiedPlayer, error: String) {
+        clearNativeDialog(player.uniqueId)
+        val line = mutableListOf<BaseComponent>()
+        line.addAll(BungeeMessages.components(messages.text("dialog.error", mapOf("error" to error)), messages.format).toList())
+        line.add(net.md_5.bungee.api.chat.TextComponent(" "))
+        val retry = BungeeMessages.components(messages.text("dialog.retry"), messages.format)
+        for (part in retry) {
+            part.clickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/_pnauthui open")
+            line.add(part)
+        }
+        player.sendMessage(*line.toTypedArray())
+    }
+
+    private inner class UiCommand : Command("_pnauthui") {
+        override fun execute(sender: CommandSender, args: Array<String>) {
+            if (sender !is ProxiedPlayer) return
+            if (!auth.isAuthenticated(sender.uniqueId)) handleUi(sender, args)
+        }
+    }
+
+    private fun handleUi(player: ProxiedPlayer, args: Array<String>) {
+        if (!isOnAuthServer(player)) return
+        if (args.size == 1 && args[0].equals("open", ignoreCase = true)) {
+            scheduleWhenLoaded(player)
+            return
+        }
+        if (args.size != 2 || !args[0].equals("captcha", ignoreCase = true)) return
+        val result = captcha.verify(player.uniqueId, args[1])
+        if (result == ClickCaptchaService.Result.SUCCESS) {
+            player.sendMessage(*BungeeMessages.components(messages.text("captcha.success"), messages.format))
+            scheduleWhenLoaded(player)
+            return
+        }
+        val key = when (result) {
+            ClickCaptchaService.Result.INVALID -> "captcha.invalid"
+            ClickCaptchaService.Result.EXPIRED -> "captcha.expired"
+            ClickCaptchaService.Result.LOCKED -> "captcha.locked"
+            else -> "captcha.invalid"
+        }
+        player.sendMessage(*BungeeMessages.components(messages.text(key), messages.format))
+        if (result != ClickCaptchaService.Result.INVALID) sendRetryCaptcha(player)
+    }
+
+    private fun sendRetryCaptcha(player: ProxiedPlayer) {
+        val retry = BungeeMessages.components(messages.text("captcha.retry"), messages.format)
+        for (part in retry) {
+            part.clickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/_pnauthui open")
+        }
+        player.sendMessage(*retry)
     }
 }
