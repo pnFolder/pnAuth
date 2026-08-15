@@ -24,19 +24,19 @@ class PicoLimboConfig {
     var title: Title = Title()
     var commands: Commands = Commands()
 
-    fun endpoint(): Endpoint {
+    fun endpoint(defaultHost: String = "127.0.0.1", defaultPort: Int = 25566): Endpoint {
         val b = bind
         if (b.isNullOrBlank()) {
-            throw IllegalArgumentException("PicoLimbo bind is missing in server.toml")
+            return Endpoint(defaultHost, defaultPort)
         }
         val separator = b.lastIndexOf(':')
         if (separator <= 0 || separator == b.length - 1) {
-            throw IllegalArgumentException("Invalid PicoLimbo bind: $b")
+            return Endpoint(defaultHost, defaultPort)
         }
         return try {
             Endpoint(b.substring(0, separator), b.substring(separator + 1).toInt())
         } catch (exception: NumberFormatException) {
-            throw IllegalArgumentException("Invalid PicoLimbo port: $b", exception)
+            Endpoint(defaultHost, defaultPort)
         }
     }
 

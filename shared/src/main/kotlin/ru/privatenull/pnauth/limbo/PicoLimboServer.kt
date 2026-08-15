@@ -34,9 +34,9 @@ class PicoLimboServer(
 
     override fun id(): String = ID
 
-    override fun host(): String = picoConfig.endpoint().host
+    override fun host(): String = picoConfig.endpoint(settings.host, settings.port).host
 
-    override fun port(): Int = picoConfig.endpoint().port
+    override fun port(): Int = picoConfig.endpoint(settings.host, settings.port).port
 
     override fun state(): LimboServerState = state
 
