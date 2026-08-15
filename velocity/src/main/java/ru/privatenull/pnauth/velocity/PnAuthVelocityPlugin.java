@@ -29,7 +29,7 @@ import ru.privatenull.pnauth.message.AuthMessages;
 import ru.privatenull.pnauth.message.MessageFormat;
 import ru.privatenull.pnauth.storage.AuthMigrationService;
 import ru.privatenull.pnauth.storage.JdbcAuthRepository;
-import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator;
+import ru.privatenull.pnauth.velocity.dialog.VelocityAuthFormCoordinator;
 import ru.privatenull.pnauth.flow.AuthLifecycleCoordinator;
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap;
 
@@ -54,7 +54,7 @@ public final class PnAuthVelocityPlugin {
     private AuthMigrationService migration;
     private LimboServer limbo;
     private RegisteredServer limboServer;
-    private VelocityDialogCoordinator dialogs;
+    private VelocityAuthFormCoordinator dialogs;
     private AuthLifecycleCoordinator lifecycle;
     private VelocityPlayerDisplay playerDisplay;
     private VelocityPlatform platform;
@@ -140,8 +140,9 @@ public final class PnAuthVelocityPlugin {
             actions = new VelocityAuthActions(proxy, proxySettings, messages, config.messageFormat());
             migration = new AuthMigrationService(repository);
             AuthCommandService commandService = new AuthCommandService(auth, messages, actions, migration, config.features());
-            dialogs = new VelocityDialogCoordinator(proxy, logger, auth, commandService, messages,
-                    config.features(), config.messageFormat(), config.security().maxPasswordLength(), proxySettings);
+            dialogs = new VelocityAuthFormCoordinator(proxy, auth, commandService, messages,
+                    config.features(), config.messageFormat(), config.security().maxPasswordLength(),
+                    proxySettings, platform);
             AuthAccessService access = new AuthAccessService(auth, proxySettings, config.access(), messages);
             lifecycle = new AuthLifecycleCoordinator(auth, access);
             commandRegistrar = new VelocityCommandRegistrar(proxy, commandService, config.messageFormat());

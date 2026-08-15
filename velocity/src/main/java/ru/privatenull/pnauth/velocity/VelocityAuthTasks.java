@@ -13,7 +13,7 @@ import ru.privatenull.pnauth.config.FeatureSettings;
 import ru.privatenull.pnauth.config.ProxySettings;
 import ru.privatenull.pnauth.message.AuthMessages;
 import ru.privatenull.pnauth.message.MessageFormat;
-import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator;
+import ru.privatenull.pnauth.velocity.dialog.VelocityAuthFormCoordinator;
 
 import java.util.Map;
 import java.util.UUID;
@@ -28,12 +28,12 @@ final class VelocityAuthTasks implements AutoCloseable {
     private final FeatureSettings settings;
     private final ProxySettings proxySettings;
     private final MessageFormat messageFormat;
-    private final VelocityDialogCoordinator dialogs;
+    private final VelocityAuthFormCoordinator dialogs;
     private final Map<UUID, TaskPair> tasks = new ConcurrentHashMap<>();
 
     VelocityAuthTasks(Object plugin, ProxyServer proxy, AuthApi auth, AuthMessages messages,
                       FeatureSettings settings, ProxySettings proxySettings, MessageFormat messageFormat,
-                      VelocityDialogCoordinator dialogs) {
+                              VelocityAuthFormCoordinator dialogs) {
         this.plugin = plugin;
         this.proxy = proxy;
         this.auth = auth;
