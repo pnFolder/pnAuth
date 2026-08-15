@@ -146,6 +146,34 @@ database:
 
 ## API
 
+### High-level dialogs
+
+Extensions normally do not need to create Minecraft resource identifiers or inspect button action
+strings. `DialogForm` generates a fresh transport identifier for every display and routes each
+button directly to its callback:
+
+```java
+PnPlayer player = api.platform().player(playerId).orElseThrow();
+
+DialogForm form = DialogForm.builder(Component.text("Discord verification"))
+        .body(Component.text("Enter the code sent by the Discord bot."), 400)
+        .text("code", Component.text("Verification code"), 32, 200)
+        .button(Component.text("Confirm"), response -> {
+            String code = response.string("code").orElseThrow();
+            discordVerification.verify(player.uniqueId(), code);
+        })
+        .button(Component.text("Cancel"), response ->
+                player.sendMessage(Component.text("Verification cancelled.")))
+        .onClose(response -> cleanupPendingVerification(player.uniqueId()))
+        .build();
+
+DialogHandle handle = player.dialogs().show(player, form);
+```
+
+Only field names such as `code` are public application data. Dialog IDs, button action IDs,
+connection ownership checks and PacketEvents NBT routing remain internal to pnAuth. Use the
+lower-level `PlayerDialog` API only when an extension needs an exact vanilla dialog structure.
+
 Платформонезависимый API и вся прикладная логика находятся в модуле `shared`. BungeeCord и Velocity являются тонкими адаптерами: они преобразуют события прокси во входные модели ядра и применяют готовые решения маршрутизации/доступа.
 
 ```java
