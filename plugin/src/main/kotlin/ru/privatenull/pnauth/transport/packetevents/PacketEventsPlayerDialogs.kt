@@ -133,7 +133,12 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             registerActions(replacement)
             val player = nativePlayer.apply(key.playerId)
             if (player != null) {
-                sendSafely(player, WrapperPlayServerShowDialog(PacketEventsDialogMapper.map(replacement)))
+                val wrapper = WrapperPlayServerShowDialog(PacketEventsDialogMapper.map(replacement))
+                val version = packets.playerManager.getClientVersion(player)
+                if (version == ClientVersion.UNKNOWN) {
+                    wrapper.clientVersion = ClientVersion.V_1_21_4
+                }
+                sendSafely(player, wrapper)
             }
         }
 
@@ -145,7 +150,12 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             unregisterActions()
             val player = nativePlayer.apply(key.playerId)
             if (player != null) {
-                sendSafely(player, WrapperPlayServerClearDialog())
+                val wrapper = WrapperPlayServerClearDialog()
+                val version = packets.playerManager.getClientVersion(player)
+                if (version == ClientVersion.UNKNOWN) {
+                    wrapper.clientVersion = ClientVersion.V_1_21_4
+                }
+                sendSafely(player, wrapper)
             }
             publish(DialogResponse("", emptyMap(), true))
         }
