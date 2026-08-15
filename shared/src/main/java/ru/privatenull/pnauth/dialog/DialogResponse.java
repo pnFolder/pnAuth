@@ -80,6 +80,25 @@ public record DialogResponse(String action, Map<String, Object> values, boolean 
     }
     public Optional<Boolean> bool(String id) {
         Object value = values.get(id);
-        return value instanceof Boolean state ? Optional.of(state) : Optional.empty();
+        if (value instanceof Boolean state) return Optional.of(state);
+        if (value instanceof Number number) return Optional.of(number.intValue() != 0);
+        if (value instanceof String text) {
+            if (text.equalsIgnoreCase("true") || text.equals("1")) return Optional.of(true);
+            if (text.equalsIgnoreCase("false") || text.equals("0")) return Optional.of(false);
+        }
+        return Optional.empty();
+    }
+
+    public Optional<Number> number(String id) {
+        Object value = values.get(id);
+        if (value instanceof Number number) return Optional.of(number);
+        if (value instanceof String text) {
+            try {
+                return Optional.of(Double.parseDouble(text));
+            } catch (NumberFormatException ignored) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 }

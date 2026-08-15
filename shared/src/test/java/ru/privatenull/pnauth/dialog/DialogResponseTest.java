@@ -9,6 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DialogResponseTest {
     @Test
+    void readsBooleanAndNumericNbtScalars() {
+        DialogResponse response = new DialogResponse("test:submit",
+                Map.of("enabled", (byte) 1, "amount", 42.5F), false);
+
+        assertEquals(true, response.bool("enabled").orElseThrow());
+        assertEquals(42.5F, response.number("amount").orElseThrow().floatValue());
+    }
+
+    @Test
     void readsNumericNbtScalarAsTextInput() {
         DialogResponse response = new DialogResponse("pnauth:login", Map.of("password", 123456), false);
 
