@@ -55,15 +55,9 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
 
     override fun supported(player: PnPlayer): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId())
-        if (nativeValue == null) {
-            diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.supported: nativeValue is NULL for ${player.uniqueId()}")
-            return false
-        }
-        val version = packets.playerManager.getClientVersion(nativeValue)
-        val protocol = platformProtocolVersion(nativeValue)
-        val result = (version != ClientVersion.UNKNOWN && version.isNewerThanOrEquals(ClientVersion.V_1_21_4)) || protocol >= 771
-        diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.supported: player=${player.username()}, version=$version, protocol=$protocol -> supported=$result")
-        return result
+        return nativeValue != null
+            && packets.playerManager.getClientVersion(nativeValue)
+                .isNewerThanOrEquals(ClientVersion.V_1_21_6)
     }
 
     override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
@@ -133,12 +127,9 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             registerActions(replacement)
             val player = nativePlayer.apply(key.playerId)
             if (player != null) {
-                val wrapper = WrapperPlayServerShowDialog(PacketEventsDialogMapper.map(replacement))
-                val version = packets.playerManager.getClientVersion(player)
-                if (version == ClientVersion.UNKNOWN) {
-                    wrapper.clientVersion = ClientVersion.V_1_21_4
-                }
-                sendSafely(player, wrapper)
+                // Do not override PacketEvents' negotiated protocol. The Java implementation
+                // sends this wrapper unchanged; forcing 1.21.4 makes modern clients reject it.
+                sendSafely(player, WrapperPlayServerShowDialog(PacketEventsDialogMapper.map(replacement)))
             }
         }
 
@@ -150,12 +141,9 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             unregisterActions()
             val player = nativePlayer.apply(key.playerId)
             if (player != null) {
-                val wrapper = WrapperPlayServerClearDialog()
-                val version = packets.playerManager.getClientVersion(player)
-                if (version == ClientVersion.UNKNOWN) {
-                    wrapper.clientVersion = ClientVersion.V_1_21_4
-                }
-                sendSafely(player, wrapper)
+                // Disconnect releases PacketEvents' user/channel first on some Bungee builds.
+                // sendSafely absorbs that expected race instead of failing the disconnect event.
+                sendSafely(player, WrapperPlayServerClearDialog())
             }
             publish(DialogResponse("", emptyMap(), true))
         }
