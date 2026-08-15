@@ -18,6 +18,37 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DialogFormTest {
     @Test
+    void canonicalLoginFormDoesNotRequireRegistrationConfirmation() {
+        AtomicReference<AuthDialogFormFactory.Credentials> submitted = new AtomicReference<>();
+        DialogForm form = AuthDialogFormFactory.create(AuthDialogFormFactory.Mode.LOGIN, true, 64,
+                authContent(), submitted::set, () -> fail("Valid login response was rejected"));
+        FakeDialogs dialogs = new FakeDialogs();
+
+        dialogs.show(player(), form);
+        assertEquals(1, dialogs.dialog.layout().inputs().size());
+        dialogs.handle.publish(new DialogResponse(actionId(dialogs.dialog), Map.of("password", "secret"), false));
+
+        assertEquals("secret", submitted.get().password());
+        assertEquals("secret", submitted.get().confirmation());
+    }
+
+    @Test
+    void canonicalRegistrationFormRequiresAndReturnsConfirmation() {
+        AtomicReference<AuthDialogFormFactory.Credentials> submitted = new AtomicReference<>();
+        DialogForm form = AuthDialogFormFactory.create(AuthDialogFormFactory.Mode.REGISTER, true, 64,
+                authContent(), submitted::set, () -> fail("Valid registration response was rejected"));
+        FakeDialogs dialogs = new FakeDialogs();
+
+        dialogs.show(player(), form);
+        assertEquals(2, dialogs.dialog.layout().inputs().size());
+        dialogs.handle.publish(new DialogResponse(actionId(dialogs.dialog),
+                Map.of("password", "secret", "confirmation", "secret"), false));
+
+        assertEquals("secret", submitted.get().password());
+        assertEquals("secret", submitted.get().confirmation());
+    }
+
+    @Test
     void generatesTransportIdsAndRoutesButtonWithoutExposingThem() {
         AtomicReference<String> submitted = new AtomicReference<>();
         DialogForm form = DialogForm.builder(Component.text("Verification"))
@@ -54,6 +85,11 @@ class DialogFormTest {
     private static String actionId(PlayerDialog dialog) {
         DialogType.MultiAction type = (DialogType.MultiAction) dialog.type();
         return ((DialogAction.DynamicCustom) type.actions().get(0).action()).id();
+    }
+
+    private static AuthDialogFormFactory.Content authContent() {
+        return new AuthDialogFormFactory.Content(Component.text("Authentication"), Component.text("Description"),
+                null, Component.text("Password"), Component.text("Repeat password"), Component.text("Submit"));
     }
 
     private static PnPlayer player() {

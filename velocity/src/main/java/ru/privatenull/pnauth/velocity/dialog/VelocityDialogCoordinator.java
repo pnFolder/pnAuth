@@ -23,7 +23,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Owns the Velocity dialog lifecycle and delegates submissions to the shared command API. */
+/**
+ * @deprecated Legacy pre-DialogForm implementation kept only as nearby rollback reference.
+ * Runtime wiring uses {@link VelocityAuthFormCoordinator}.
+ */
+@Deprecated(forRemoval = false)
 public final class VelocityDialogCoordinator implements AutoCloseable {
     private final AuthApi auth;
     private final AuthCommandService commands;

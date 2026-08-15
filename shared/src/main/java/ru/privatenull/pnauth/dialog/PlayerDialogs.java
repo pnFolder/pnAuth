@@ -13,6 +13,7 @@ public interface PlayerDialogs {
     default DialogHandle show(PnPlayer player, DialogForm form) {
         return form.show(this, player);
     }
+
     Optional<DialogHandle> find(UUID playerId, String dialogId);
     boolean close(UUID playerId, String dialogId);
     void closeAll(UUID playerId);

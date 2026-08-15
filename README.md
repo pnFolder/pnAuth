@@ -174,6 +174,7 @@ Only field names such as `code` are public application data. Dialog IDs, button 
 connection ownership checks and PacketEvents NBT routing remain internal to pnAuth. Use the
 lower-level `PlayerDialog` API only when an extension needs an exact vanilla dialog structure.
 
+
 Платформонезависимый API и вся прикладная логика находятся в модуле `shared`. BungeeCord и Velocity являются тонкими адаптерами: они преобразуют события прокси во входные модели ядра и применяют готовые решения маршрутизации/доступа.
 
 ```java

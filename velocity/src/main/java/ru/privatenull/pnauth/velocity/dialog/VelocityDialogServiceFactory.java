@@ -4,6 +4,8 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 
+/** @deprecated Legacy factory retained for rollback reference. */
+@Deprecated(forRemoval = false)
 final class VelocityDialogServiceFactory {
     private VelocityDialogServiceFactory() {
     }

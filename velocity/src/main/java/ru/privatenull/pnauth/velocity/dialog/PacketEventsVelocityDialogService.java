@@ -33,7 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** PacketEvents adapter. Authentication decisions remain in pnAuth's shared command layer. */
+/** @deprecated Legacy direct adapter; shared PacketEventsPlayerDialogs now owns dialog transport. */
+@Deprecated(forRemoval = false)
 public final class PacketEventsVelocityDialogService implements VelocityDialogService {
     /** Only server-issued, tokenized IDs reach the coordinator; it performs the final exact authorization. */
     private static final Pattern ACTION_ID = Pattern.compile("pnauth:(?:login|register)-[0-9a-f]{32}");

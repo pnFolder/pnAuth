@@ -21,7 +21,7 @@ import ru.privatenull.pnauth.config.ProxySettings;
 import ru.privatenull.pnauth.flow.AuthLifecycleCoordinator;
 import ru.privatenull.pnauth.flow.JoinDecision;
 import ru.privatenull.pnauth.flow.PlayerConnection;
-import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator;
+import ru.privatenull.pnauth.velocity.dialog.VelocityAuthFormCoordinator;
 
 public final class VelocityAuthListener {
     private final ProxyServer proxy;
@@ -30,7 +30,7 @@ public final class VelocityAuthListener {
     private final MessageFormat messageFormat;
     private final RegisteredServer embeddedAuthServer;
     private final ProxySettings proxySettings;
-    private final VelocityDialogCoordinator dialogs;
+    private final VelocityAuthFormCoordinator dialogs;
     private final AuthMessages messages;
 
     public VelocityAuthListener(
@@ -40,7 +40,7 @@ public final class VelocityAuthListener {
             MessageFormat messageFormat,
             RegisteredServer embeddedAuthServer,
             ProxySettings proxySettings,
-            VelocityDialogCoordinator dialogs,
+            VelocityAuthFormCoordinator dialogs,
             AuthMessages messages
     ) {
         this.proxy = proxy;

@@ -6,7 +6,8 @@ import net.kyori.adventure.text.Component;
 import java.util.List;
 import java.util.Map;
 
-/** Transport boundary for Minecraft dialogs on Velocity. */
+/** @deprecated Legacy transport boundary retained for rollback reference. */
+@Deprecated(forRemoval = false)
 public interface VelocityDialogService extends AutoCloseable {
     boolean available();
     void show(Player player, DialogForm form);

@@ -19,18 +19,10 @@ import ru.privatenull.pnauth.command.AuthCommandService;
 import ru.privatenull.pnauth.config.FeatureSettings;
 import ru.privatenull.pnauth.config.ProxySettings;
 import ru.privatenull.pnauth.message.AuthMessages;
-import ru.privatenull.pnauth.message.MessageFormat;
-import ru.privatenull.pnauth.message.MessageRenderers;
 import ru.privatenull.pnauth.security.ClickCaptchaService;
-import ru.privatenull.pnauth.dialog.AuthDialogDimensions;
-import ru.privatenull.pnauth.dialog.DialogAction;
-import ru.privatenull.pnauth.dialog.DialogBody;
-import ru.privatenull.pnauth.dialog.DialogButton;
+import ru.privatenull.pnauth.dialog.AuthDialogFormFactory;
+import ru.privatenull.pnauth.dialog.DialogForm;
 import ru.privatenull.pnauth.dialog.DialogHandle;
-import ru.privatenull.pnauth.dialog.DialogInput;
-import ru.privatenull.pnauth.dialog.DialogLayout;
-import ru.privatenull.pnauth.dialog.DialogType;
-import ru.privatenull.pnauth.dialog.PlayerDialog;
 import ru.privatenull.pnauth.dialog.PlayerDialogs;
 import ru.privatenull.pnauth.platform.PnPlatform;
 
@@ -122,61 +114,46 @@ public final class BungeeDialogListener implements Listener {
     }
 
     private void show(ProxiedPlayer player, boolean register) {
-        List<DialogInput> inputs = register
-                ? settings.repeatPasswordWhenRegister()
-                ? List.of(passwordInput("password", messages.text("dialog.register.password")),
-                passwordInput("repeatPassword", messages.text("dialog.register.repeat")))
-                : List.of(passwordInput("password", messages.text("dialog.register.password")))
-                : List.of(passwordInput("password", messages.text("dialog.login.password")));
-        String title = register ? messages.text("dialog.register.title") : messages.text("dialog.login.title");
-        String button = register ? messages.text("dialog.register.button") : messages.text("dialog.login.button");
-        String description = register ? messages.text("dialog.register.description") : messages.text("dialog.login.description");
         String command = register ? "register" : "login";
-        String actionId = "pnauth:" + command + "-" + UUID.randomUUID().toString().replace("-", "");
-        DialogLayout layout = new DialogLayout(
-                BungeeMessages.adventureComponent(title, messages.format()), null,
-                List.of(new DialogBody.PlainMessage(
-                        BungeeMessages.adventureComponent(description, messages.format()),
-                        AuthDialogDimensions.BODY_WIDTH)),
-                inputs, false, false, DialogLayout.AfterAction.CLOSE);
-        DialogButton submit = new DialogButton(
-                BungeeMessages.adventureComponent(button, messages.format()),
-                net.kyori.adventure.text.Component.empty(), AuthDialogDimensions.SUBMIT_BUTTON_WIDTH,
-                new DialogAction.DynamicCustom(actionId, Map.of()));
-        PlayerDialog dialog = new PlayerDialog("pnauth:" + command, layout,
-                new DialogType.MultiAction(List.of(submit), null, 1));
         var pnPlayer = platform.player(player.getUniqueId())
                 .orElseThrow(() -> new IllegalStateException("Player left before the dialog was shown"));
-        DialogHandle handle = dialogs.show(pnPlayer, dialog);
+        AuthDialogFormFactory.Content content = new AuthDialogFormFactory.Content(
+                dialogComponent(register ? "dialog.register.title" : "dialog.login.title"),
+                dialogComponent(register ? "dialog.register.description" : "dialog.login.description"),
+                null,
+                dialogComponent(register ? "dialog.register.password" : "dialog.login.password"),
+                register ? dialogComponent("dialog.register.repeat") : null,
+                dialogComponent(register ? "dialog.register.button" : "dialog.login.button"));
+        DialogForm form = AuthDialogFormFactory.create(
+                register ? AuthDialogFormFactory.Mode.REGISTER : AuthDialogFormFactory.Mode.LOGIN,
+                settings.repeatPasswordWhenRegister(), maxPasswordLength, content,
+                credentials -> {
+                    activeDialogs.remove(player.getUniqueId());
+                    if (!isOnAuthServer(player) || auth.isAuthenticated(player.getUniqueId())) return;
+                    if (!captcha.verified(player.getUniqueId())) {
+                        sendCaptcha(player);
+                        return;
+                    }
+                    execute(player, command, command.equals("login")
+                            ? List.of(credentials.password())
+                            : List.of(credentials.password(), credentials.confirmation()));
+                },
+                () -> sendDialogError(player, messages.text("operation-error")));
+        DialogHandle handle = dialogs.show(pnPlayer, form);
         DialogHandle previous = activeDialogs.put(player.getUniqueId(), handle);
         if (previous != null) previous.close();
-        handle.onResponse(response -> {
-            activeDialogs.remove(player.getUniqueId(), handle);
-            if (response.closed() || !isOnAuthServer(player) || auth.isAuthenticated(player.getUniqueId())) return;
-            if (!captcha.verified(player.getUniqueId())) {
-                sendCaptcha(player);
-                return;
-            }
-            String password = response.string("password").orElse(null);
-            String confirmation = register && settings.repeatPasswordWhenRegister()
-                    ? response.string("repeatPassword").orElse(null) : password;
-            if (password != null && confirmation != null) {
-                execute(player, command, command.equals("login")
-                        ? List.of(password) : List.of(password, confirmation));
-            } else {
-                sendDialogError(player, messages.text("operation-error"));
-            }
-        });
     }
 
-    private DialogInput.Text passwordInput(String key, String label) {
-        return new DialogInput.Text(key, BungeeMessages.adventureComponent(label, messages.format()),
-                true, "", maxPasswordLength, AuthDialogDimensions.FIELD_WIDTH, null);
+    private net.kyori.adventure.text.Component dialogComponent(String key) {
+        return BungeeMessages.adventureComponent(messages.text(key), messages.format());
     }
 
-    private static int width(int width) {
-        return Math.max(1, Math.min(1024, width));
-    }
+    /*
+     * Legacy implementation retained for rollback reference:
+     * the adapter previously assembled DialogLayout, DialogInput, DialogButton, a random
+     * DynamicCustom action and its response parser here. AuthDialogFormFactory now owns that
+     * complete schema and callback routing for every platform.
+     */
 
     private void scheduleWhenLoaded(ProxiedPlayer player) {
         cancel(player.getUniqueId());
@@ -253,12 +230,6 @@ public final class BungeeDialogListener implements Listener {
     private void clearNativeDialog(UUID playerId) {
         DialogHandle handle = activeDialogs.remove(playerId);
         if (handle != null) handle.close();
-    }
-
-    private String dialogText(String key) {
-        String value = messages.text(key);
-        if (messages.format() == MessageFormat.MINI_MESSAGE) return value;
-        return MessageRenderers.toLegacy(value, messages.format()).replaceAll("(?i)[&§][0-9a-fk-or]", "");
     }
 
     private void sendCaptcha(ProxiedPlayer player) {
