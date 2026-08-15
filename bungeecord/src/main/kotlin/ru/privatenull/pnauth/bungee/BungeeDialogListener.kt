@@ -56,6 +56,7 @@ class BungeeDialogListener internal constructor(
     @EventHandler
     fun onServerConnected(event: ServerConnectedEvent) {
         val player = event.player
+        plugin.logger.info("[pnAuth-DEBUG] onServerConnected: player=${player.name}, connectedServer=${event.server.info.name}, configuredAuthServer=${settings.authServer}")
         if (!event.server.info.name.equals(settings.authServer, ignoreCase = true)
             || auth.isAuthenticated(player.uniqueId)
         ) {
@@ -65,6 +66,7 @@ class BungeeDialogListener internal constructor(
 
     @EventHandler
     fun onPostLogin(event: PostLoginEvent) {
+        plugin.logger.info("[pnAuth-DEBUG] onPostLogin: player=${event.player.name}")
         scheduleWhenLoaded(event.player)
     }
 
@@ -98,6 +100,7 @@ class BungeeDialogListener internal constructor(
             }
             val status = auth.status(player.uniqueId)
             val server = player.server
+            plugin.logger.info("[pnAuth-DEBUG] scheduleWhenLoaded tick: player=${player.name}, status=$status, server=${server?.info?.name}, configuredAuthServer=${settings.authServer}")
             if (status == AuthStatus.NOT_LOADED || server == null
                 || !server.info.name.equals(settings.authServer, ignoreCase = true)
             ) {
@@ -112,13 +115,17 @@ class BungeeDialogListener internal constructor(
             val protocol = player.pendingConnection.version
             val passwordStage = status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED
             try {
-                if (!coordinator.show(player.uniqueId, status, protocol)) {
+                plugin.logger.info("[pnAuth-DEBUG] Calling coordinator.show for ${player.name}, status=$status, protocol=$protocol")
+                val shown = coordinator.show(player.uniqueId, status, protocol)
+                plugin.logger.info("[pnAuth-DEBUG] coordinator.show result for ${player.name}: $shown")
+                if (!shown) {
                     sendCommandFallback(player, status, protocol, passwordStage)
                 }
             } catch (exception: RuntimeException) {
                 plugin.logger.warning(
                     "Could not show authentication UI for ${player.name}; falling back to commands: ${exception.message}"
                 )
+                exception.printStackTrace()
                 sendCommandFallback(player, status, protocol, passwordStage)
             }
         }, 100, 100, TimeUnit.MILLISECONDS)

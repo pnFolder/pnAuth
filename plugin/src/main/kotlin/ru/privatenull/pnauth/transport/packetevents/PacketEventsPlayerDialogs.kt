@@ -54,13 +54,16 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     }
 
     override fun supported(player: PnPlayer): Boolean {
-        val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
-        val version = packets.playerManager.getClientVersion(nativeValue)
-        if (version != ClientVersion.UNKNOWN && version.isNewerThanOrEquals(ClientVersion.V_1_21_4)) {
-            return true
+        val nativeValue = nativePlayer.apply(player.uniqueId())
+        if (nativeValue == null) {
+            diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.supported: nativeValue is NULL for ${player.uniqueId()}")
+            return false
         }
+        val version = packets.playerManager.getClientVersion(nativeValue)
         val protocol = platformProtocolVersion(nativeValue)
-        return protocol >= 771
+        val result = (version != ClientVersion.UNKNOWN && version.isNewerThanOrEquals(ClientVersion.V_1_21_4)) || protocol >= 771
+        diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.supported: player=${player.username()}, version=$version, protocol=$protocol -> supported=$result")
+        return result
     }
 
     override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
@@ -184,16 +187,21 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     }
 
     private fun sendSafely(player: Any, packet: Any) {
+        diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely: Sending ${packet.javaClass.simpleName} to $player")
         try {
             packets.playerManager.sendPacket(player, packet)
+            diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely: Successfully sent ${packet.javaClass.simpleName}")
         } catch (exception: Throwable) {
+            diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely EXCEPTION sending via playerManager: ${exception.javaClass.simpleName}: ${exception.message}")
             try {
                 val user = packets.protocolManager.getUser(player)
                 if (user != null && packet is com.github.retrooper.packetevents.wrapper.PacketWrapper<*>) {
                     user.sendPacket(packet)
+                    diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely: Successfully sent via fallback user channel")
                     return
                 }
-            } catch (ignored: Throwable) {
+            } catch (fallbackEx: Throwable) {
+                diagnostics.accept("[pnAuth-DEBUG] PacketEventsPlayerDialogs.sendSafely FALLBACK EXCEPTION: ${fallbackEx.javaClass.simpleName}: ${fallbackEx.message}")
             }
             diagnostics.accept("[dialogs] Warning: failed to send dialog packet: ${exception.javaClass.simpleName}: ${exception.message}")
         }

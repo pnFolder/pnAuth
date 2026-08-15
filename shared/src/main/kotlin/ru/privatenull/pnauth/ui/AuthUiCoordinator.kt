@@ -52,18 +52,31 @@ class AuthUiCoordinator(
     /** Returns false when the adapter should display the command fallback. */
     fun show(playerId: UUID, status: AuthStatus, protocol: Int): Boolean {
         protocols[playerId] = protocol
-        val player = player(playerId) ?: return false
-        if (!onAuthServer(player)) return false
+        val player = player(playerId)
+        if (player == null) {
+            diagnostics.accept("[pnAuth-DEBUG] AuthUiCoordinator.show: player is NULL for $playerId")
+            return false
+        }
+        val isOnAuth = onAuthServer(player)
+        diagnostics.accept("[pnAuth-DEBUG] AuthUiCoordinator.show: player=${player.username()}, onAuthServer=$isOnAuth, currentServer=${player.currentServer().orElse("none")}, authServer=$authServer")
+        if (!isOnAuth) return false
         val session = sessions.computeIfAbsent(playerId) { Session() }
         val running = submissions[playerId]
         if (running != null && running.session == session) return true
         clear(playerId)
-        if (!passwordStage(status)) return false
-        if (!auth.shouldUseDialog(playerId, protocol, player.dialogs().supported(player))) return false
+        if (!passwordStage(status)) {
+            diagnostics.accept("[pnAuth-DEBUG] AuthUiCoordinator.show: status $status is NOT passwordStage")
+            return false
+        }
+        val isSupported = player.dialogs().supported(player)
+        val useDialog = auth.shouldUseDialog(playerId, protocol, isSupported)
+        diagnostics.accept("[pnAuth-DEBUG] AuthUiCoordinator.show: supported=$isSupported, shouldUseDialog=$useDialog, protocol=$protocol")
+        if (!useDialog) return false
         if (!captcha.verified(playerId)) {
             sendCaptcha(player)
             return true
         }
+        diagnostics.accept("[pnAuth-DEBUG] AuthUiCoordinator.show: calling open() for ${player.username()}")
         open(player, status, null, session)
         return true
     }
