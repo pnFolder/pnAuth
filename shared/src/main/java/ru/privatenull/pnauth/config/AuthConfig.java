@@ -20,9 +20,10 @@ public record AuthConfig(
         FeatureSettings features,
         LimboSettings limbo,
         PaperSettings paper,
-        MessageFormat messageFormat
+        MessageFormat messageFormat,
+        ProcessingTitleSettings processingTitle
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 4;
+    public static final int CURRENT_SCHEMA_VERSION = 5;
     private static final String LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/";
     private static final String LEGACY_FORK_SHA256 =
@@ -58,6 +59,7 @@ public record AuthConfig(
         PnAuthYamlConfig.Features.Totp totp = required(features.totp, PnAuthYamlConfig.Features.Totp::new);
         PnAuthYamlConfig.Features.Captcha captcha = required(features.captcha, PnAuthYamlConfig.Features.Captcha::new);
         PnAuthYamlConfig.Ui.Dialogs dialogs = required(ui.dialogs, PnAuthYamlConfig.Ui.Dialogs::new);
+        PnAuthYamlConfig.Ui.ProcessingTitle processingTitle = required(ui.processingTitle, PnAuthYamlConfig.Ui.ProcessingTitle::new);
         migrateLegacyPicoLimboSource(limbo);
 
         AuthSettings defaults = AuthSettings.defaults();
@@ -134,7 +136,8 @@ public record AuthConfig(
                         restrictions.commands, restrictions.interaction, restrictions.breaking,
                         restrictions.placing, restrictions.inventory
                 ),
-                messageFormat(yaml.messages)
+                messageFormat(yaml.messages),
+                processingTitle(processingTitle)
         );
     }
 
@@ -233,6 +236,24 @@ public record AuthConfig(
             return MessageFormat.parse(messages == null ? null : messages.format);
         } catch (IllegalArgumentException exception) {
             throw new IOException("Invalid messages.format", exception);
+        }
+    }
+
+    private static ProcessingTitleSettings processingTitle(PnAuthYamlConfig.Ui.ProcessingTitle value) throws IOException {
+        PnAuthYamlConfig.Ui.ProcessingTitle.Animation animation = required(value.animation, PnAuthYamlConfig.Ui.ProcessingTitle.Animation::new);
+        PnAuthYamlConfig.Ui.ProcessingTitle.Timings timings = required(value.timings, PnAuthYamlConfig.Ui.ProcessingTitle.Timings::new);
+        try {
+            return new ProcessingTitleSettings(value.enabled,
+                    new ProcessingTitleSettings.Animation(ProcessingTitleSettings.Type.valueOf(animation.type.toUpperCase(Locale.ROOT)), animation.colors, animation.frameCount),
+                    new ProcessingTitleSettings.Timings(Duration.ofMillis(timings.frameIntervalMillis),
+                            Duration.ofMillis(timings.minimumDisplayMillis),
+                            Duration.ofMillis(timings.resultFadeInMillis),
+                            Duration.ofMillis(timings.resultDisplayMillis),
+                            Duration.ofMillis(timings.resultFadeOutMillis),
+                            Duration.ofMillis(timings.fadeInMillis), Duration.ofMillis(timings.stayMillis),
+                            Duration.ofMillis(timings.fadeOutMillis)));
+        } catch (RuntimeException exception) {
+            throw new IOException("Invalid ui.processing-title settings", exception);
         }
     }
 

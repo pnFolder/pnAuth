@@ -65,6 +65,12 @@ public final class MessageCatalog {
                 "&cThe challenge expired. Request a new one.", "&cToo many incorrect attempts.", "&d[New challenge]",
                 "&8[&d&lpnAuth&8] &c{error} &7The dialog was closed.", "&d[Try again]",
                 "&7Click to reopen the dialog", "&8[&d&lpnAuth&8] &aYou have successfully logged in. Welcome!");
+        values.put("auth.processing.title", "Authentication");
+        values.put("auth.processing.subtitle", "&fChecking your password, please wait...");
+        values.put("auth.processing.success.title", "&aLogin successful");
+        values.put("auth.processing.success.subtitle", "&fWelcome back!");
+        values.put("auth.processing.failure.title", "&cLogin failed");
+        values.put("auth.processing.failure.subtitle", "&fPlease check your password and try again.");
         values.put("broadcast.message", "&8[&d&lAnnouncement&8] &f{message}");
         return values;
     }
@@ -123,6 +129,12 @@ public final class MessageCatalog {
                 "&cПроверка устарела. Получите новую.", "&cСлишком много неверных попыток.", "&d[Пройти проверку]",
                 "&8[&d&lpnAuth&8] &c{error} &7Окно закрыто.", "&d[Повторить вход]",
                 "&7Нажмите, чтобы снова открыть окно", "&8[&d&lpnAuth&8] &aВы успешно авторизовались. Добро пожаловать!");
+        values.put("auth.processing.title", "Авторизация");
+        values.put("auth.processing.subtitle", "&fПроверяем пароль, пожалуйста, подождите...");
+        values.put("auth.processing.success.title", "&aВход выполнен");
+        values.put("auth.processing.success.subtitle", "&fДобро пожаловать!");
+        values.put("auth.processing.failure.title", "&cНе удалось войти");
+        values.put("auth.processing.failure.subtitle", "&fПроверьте пароль и попробуйте ещё раз.");
         values.put("broadcast.message", "&8[&d&lОбъявление&8] &f{message}");
         return values;
     }

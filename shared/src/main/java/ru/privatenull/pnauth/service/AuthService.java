@@ -12,6 +12,9 @@ import ru.privatenull.pnauth.storage.AuthRepository;
 import ru.privatenull.pnauth.storage.PasswordHash;
 import ru.privatenull.pnauth.config.AuthSettings;
 import ru.privatenull.pnauth.config.FeatureSettings;
+import ru.privatenull.pnauth.config.ProcessingTitleSettings;
+import ru.privatenull.pnauth.message.AnimatedGradient;
+import ru.privatenull.pnauth.message.MessageFormat;
 import ru.privatenull.pnauth.security.IpBanStore;
 import ru.privatenull.pnauth.security.PasswordHasher;
 import ru.privatenull.pnauth.security.TotpService;
@@ -37,8 +40,10 @@ import ru.privatenull.pnauth.kernel.service.DefaultServiceRegistry;
 import ru.privatenull.pnauth.kernel.service.ServiceRegistry;
 import ru.privatenull.pnauth.platform.PnPlatform;
 import ru.privatenull.pnauth.platform.UnavailablePlatform;
+import ru.privatenull.pnauth.platform.TaskHandle;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -70,6 +75,8 @@ public final class AuthService implements AuthApi {
     private final AuthEventBus events;
     private final AuthExtensionRegistry extensions;
     private volatile PlayerDisplay display = new NoopPlayerDisplay();
+    private volatile ProcessingPresentation processingPresentation = ProcessingPresentation.disabled();
+    private final ConcurrentMap<UUID, ProcessingState> processingOperations = new ConcurrentHashMap<>();
     private volatile PnPlatform platform = new UnavailablePlatform();
     private final ConcurrentMap<String, java.util.List<DisplayHandle>> verificationDisplays = new ConcurrentHashMap<>();
     private final ServiceRegistry services = new DefaultServiceRegistry();
@@ -222,6 +229,8 @@ public final class AuthService implements AuthApi {
         joining.remove(uniqueId);
         Session departed = sessions.remove(uniqueId);
         pendingTotpSetups.remove(uniqueId);
+        ProcessingState processing = processingOperations.remove(uniqueId);
+        if (processing != null) processing.close();
         display.clear(uniqueId);
         platform.tasks().cancelAll(uniqueId);
         platform.dialogs().closeAll(uniqueId);
@@ -240,7 +249,7 @@ public final class AuthService implements AuthApi {
             return CompletableFuture.completedFuture(AuthResult.NOT_JOINED);
         }
         Session registrationSession = sessions.get(uniqueId);
-        return guarded(new AuthOperationContext(AuthOperation.REGISTER, uniqueId, username,
+        CompletableFuture<AuthResult> operation = guarded(new AuthOperationContext(AuthOperation.REGISTER, uniqueId, username,
                 registrationSession == null ? null : registrationSession.ip, java.util.Map.of()), () -> {
             Session session = sessions.get(uniqueId);
             if (session == null) {
@@ -278,6 +287,7 @@ public final class AuthService implements AuthApi {
             events.publish(new UserAuthenticatedEvent(uniqueId, record.realName(), UserAuthenticatedEvent.Cause.REGISTER));
             return AuthResult.SUCCESS;
         });
+        return withProcessingTitle(uniqueId, operation);
     }
 
     @Override
@@ -293,7 +303,7 @@ public final class AuthService implements AuthApi {
         PreAuthOperationEvent preEvent = new PreAuthOperationEvent(request);
         events.publish(preEvent);
         if (preEvent.cancelled()) return completedOperation(request, AuthResult.OPERATION_DENIED);
-        return async(() -> {
+        CompletableFuture<AuthResult> operation = async(() -> {
             Session session = sessions.get(uniqueId);
             if (session == null) {
                 return new LoginPreparation(null, AuthResult.NOT_JOINED);
@@ -336,6 +346,7 @@ public final class AuthService implements AuthApi {
                         .thenApply(result -> finishOperation(verified, result));
             });
         }).toCompletableFuture();
+        return withProcessingTitle(uniqueId, operation);
     }
 
     @Override
@@ -734,6 +745,128 @@ public final class AuthService implements AuthApi {
         this.display = java.util.Objects.requireNonNull(display, "display");
     }
 
+    /** Configures the localized title shown for the exact lifetime of a password operation. */
+    public void installProcessingTitle(ProcessingTitleSettings settings, MessageFormat format, String title, String subtitle,
+                                       String successTitle, String successSubtitle, String failureTitle, String failureSubtitle) {
+        this.processingPresentation = new ProcessingPresentation(java.util.Objects.requireNonNull(settings, "settings"),
+                format == null ? MessageFormat.LEGACY : format, title == null ? "" : title, subtitle == null ? "" : subtitle,
+                successTitle == null ? "" : successTitle, successSubtitle == null ? "" : successSubtitle,
+                failureTitle == null ? "" : failureTitle, failureSubtitle == null ? "" : failureSubtitle);
+    }
+
+    private CompletableFuture<AuthResult> withProcessingTitle(
+            UUID uniqueId, CompletableFuture<AuthResult> operation) {
+        ProcessingPresentation presentation = processingPresentation;
+        ProcessingState state = processingOperations.compute(uniqueId, (playerId, current) -> {
+            if (current != null) {
+                current.references++;
+                return current;
+            }
+            return startProcessingTitle(playerId, presentation);
+        });
+        CompletableFuture<AuthResult> visibleResult = new CompletableFuture<>();
+        operation.whenComplete((result, failure) -> {
+            processingOperations.computeIfPresent(uniqueId, (playerId, current) -> {
+                if (current != state || --current.references > 0) {
+                    visibleResult.complete(result);
+                    return current;
+                }
+                long remaining = presentation.settings.timings().minimumDisplay().toMillis()
+                        - (System.nanoTime() - current.startedAtNanos) / 1_000_000L;
+                Runnable showResult = () -> showProcessingResult(uniqueId, current, presentation, result, failure, visibleResult);
+                if (remaining > 0) current.finishTask = platform.scheduler().delayed(Duration.ofMillis(remaining), showResult);
+                else showResult.run();
+                return current;
+            });
+            if (!visibleResult.isDone() && !processingOperations.containsKey(uniqueId)) visibleResult.complete(result);
+        });
+        return visibleResult;
+    }
+
+    private void showProcessingResult(UUID uniqueId, ProcessingState state, ProcessingPresentation presentation,
+                                      AuthResult result, Throwable failure, CompletableFuture<AuthResult> visibleResult) {
+        if (state.title == null) {
+            completeProcessingResult(uniqueId, state, result, failure, visibleResult);
+            return;
+        }
+        state.stopAnimation();
+        boolean success = failure == null && result == AuthResult.SUCCESS;
+        Duration resultFadeIn = presentation.settings.timings().resultFadeIn();
+        Duration resultDuration = presentation.settings.timings().resultDisplay();
+        Duration resultFadeOut = presentation.settings.timings().resultFadeOut();
+        state.title.timings(resultFadeIn, resultDuration, resultFadeOut);
+        state.title.title(success ? presentation.successTitle : presentation.failureTitle);
+        state.title.subtitle(success ? presentation.successSubtitle : presentation.failureSubtitle);
+        Duration delay = resultFadeIn.plus(resultDuration).plus(resultFadeOut);
+        if (delay.isZero()) completeProcessingResult(uniqueId, state, result, failure, visibleResult);
+        else state.finishTask = platform.scheduler().delayed(delay,
+                () -> completeProcessingResult(uniqueId, state, result, failure, visibleResult));
+    }
+
+    private void completeProcessingResult(UUID uniqueId, ProcessingState state, AuthResult result,
+                                          Throwable failure, CompletableFuture<AuthResult> visibleResult) {
+        processingOperations.remove(uniqueId, state);
+        state.releaseNaturally();
+        if (failure == null) visibleResult.complete(result);
+        else visibleResult.completeExceptionally(failure);
+    }
+
+    private ProcessingState startProcessingTitle(UUID playerId, ProcessingPresentation presentation) {
+        if (!presentation.settings.enabled()) return new ProcessingState(null, null);
+        ProcessingTitleSettings.Timings timings = presentation.settings.timings();
+        TitleHandle title = display.title(playerId, "pnauth:auth-processing", new TitleOptions(
+                presentation.title(0), presentation.subtitle, timings.fadeIn(),
+                timings.stay(), timings.fadeOut(), java.time.Duration.ZERO,
+                java.time.Duration.ZERO));
+        TaskHandle animation = null;
+        if (presentation.settings.animation().type() == ProcessingTitleSettings.Type.GRADIENT
+                && presentation.settings.animation().frameCount() > 1) {
+            animation = platform.player(playerId).map(player -> platform.scheduler().repeating(player,
+                    timings.frameInterval(), timings.frameInterval(), new Runnable() {
+                        private int frame = 1;
+                        @Override public void run() {
+                            if (title.active()) title.title(presentation.title(frame++));
+                        }
+                    })).orElse(null);
+        }
+        return new ProcessingState(title, animation);
+    }
+
+    private record ProcessingPresentation(ProcessingTitleSettings settings, MessageFormat format, String title, String subtitle,
+                                          String successTitle, String successSubtitle, String failureTitle, String failureSubtitle) {
+        private static ProcessingPresentation disabled() {
+            return new ProcessingPresentation(new ProcessingTitleSettings(false,
+                    new ProcessingTitleSettings.Animation(ProcessingTitleSettings.Type.NONE, java.util.List.of(), 1),
+                    ProcessingTitleSettings.Timings.defaults()), MessageFormat.LEGACY, "", "", "", "", "", "");
+        }
+        private String title(int frame) {
+            ProcessingTitleSettings.Animation animation = settings.animation();
+            return animation.type() == ProcessingTitleSettings.Type.GRADIENT
+                    ? AnimatedGradient.frame(title, format, animation.colors(), frame % animation.frameCount(), animation.frameCount())
+                    : title;
+        }
+    }
+
+    private static final class ProcessingState {
+        private int references = 1;
+        private final TitleHandle title;
+        private final TaskHandle animation;
+        private final long startedAtNanos = System.nanoTime();
+        private TaskHandle finishTask;
+        private ProcessingState(TitleHandle title, TaskHandle animation) { this.title = title; this.animation = animation; }
+        private void close() {
+            stopAnimation();
+            if (finishTask != null) finishTask.cancel();
+            if (title != null) title.close();
+        }
+        private void releaseNaturally() {
+            if (animation != null) animation.cancel();
+            if (finishTask != null) finishTask.cancel();
+            if (title != null) title.release();
+        }
+        private void stopAnimation() { if (animation != null) animation.cancel(); }
+    }
+
     @Override
     public PnPlatform platform() {
         return platform;
@@ -785,6 +918,8 @@ public final class AuthService implements AuthApi {
     public void close() {
         platform.tasks().cancelAll();
         platform.players().forEach(player -> platform.dialogs().closeAll(player.uniqueId()));
+        processingOperations.values().forEach(ProcessingState::close);
+        processingOperations.clear();
         executor.shutdownNow();
         repository.close();
         sessions.clear();

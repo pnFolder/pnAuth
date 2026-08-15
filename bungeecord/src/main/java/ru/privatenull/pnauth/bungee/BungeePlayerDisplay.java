@@ -52,13 +52,14 @@ final class BungeePlayerDisplay implements PlayerDisplay, AutoCloseable {
         volatile String title, subtitle; volatile Duration fadeIn, stay, fadeOut, repeat; volatile ScheduledFuture<?> refresh;
         Titles(PlayerResourceKey key, TitleOptions options) { super(key, options.lifetime()); title=options.title(); subtitle=options.subtitle(); fadeIn=options.fadeIn(); stay=options.stay(); fadeOut=options.fadeOut(); repeat=options.repeatInterval(); showNow(); reschedule(); }
         void apply(TitleOptions o){title=o.title();subtitle=o.subtitle();timings(o.fadeIn(),o.stay(),o.fadeOut());repeatInterval(o.repeatInterval());lifetime(o.lifetime());showNow();}
-        public void title(String value) { title=value == null ? "" : value; showNow(); } public void subtitle(String value) { subtitle=value == null ? "" : value; showNow(); }
-        public void timings(Duration a, Duration b, Duration c) { fadeIn=valid(a); stay=valid(b); fadeOut=valid(c); }
+        public synchronized void title(String value) { title=value == null ? "" : value; showNow(); } public synchronized void subtitle(String value) { subtitle=value == null ? "" : value; showNow(); }
+        public synchronized void timings(Duration a, Duration b, Duration c) { fadeIn=valid(a); stay=valid(b); fadeOut=valid(c); }
         public synchronized void repeatInterval(Duration value) { repeat=valid(value); reschedule(); }
         private synchronized void reschedule() { cancel(refresh); if (active && !repeat.isZero()) refresh=scheduler.scheduleAtFixedRate(this::showNow, repeat.toMillis(), repeat.toMillis(), TimeUnit.MILLISECONDS); }
-        public void showNow() { ProxiedPlayer player=player(); if(active&&!paused&&player!=null) player.sendTitle(proxy.createTitle().title(BungeeMessages.component(title,format)).subTitle(BungeeMessages.component(subtitle,format)).fadeIn(ticks(fadeIn)).stay(ticks(stay)).fadeOut(ticks(fadeOut))); }
+        public synchronized void showNow() { ProxiedPlayer player=player(); if(active&&!paused&&player!=null) player.sendTitle(proxy.createTitle().title(BungeeMessages.component(title,format)).subTitle(BungeeMessages.component(subtitle,format)).fadeIn(ticks(fadeIn)).stay(ticks(stay)).fadeOut(ticks(fadeOut))); }
         public void clear() { ProxiedPlayer player=player(); if(player!=null) player.sendTitle(proxy.createTitle().clear()); }
-        public synchronized void close() { if(!active)return; active=false;titles.remove(key,this); cancel(refresh); cancel(expiry); clear(); }
+        public synchronized void release() { if(!active)return; active=false;titles.remove(key,this); cancel(refresh); cancel(expiry); }
+        public synchronized void close() { if(!active)return; release(); clear(); }
     }
 
     private final class Boss extends Base implements BossBarHandle {

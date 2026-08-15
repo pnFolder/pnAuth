@@ -40,10 +40,10 @@ final class VelocityPlayerDisplay implements PlayerDisplay, AutoCloseable {
     private final class Titles extends Base implements TitleHandle{
         volatile String title,subtitle;volatile Duration fadeIn,stay,fadeOut,repeat;volatile ScheduledFuture<?> refresh;
         Titles(PlayerResourceKey key,TitleOptions o){super(key,o.lifetime());title=o.title();subtitle=o.subtitle();fadeIn=o.fadeIn();stay=o.stay();fadeOut=o.fadeOut();repeat=o.repeatInterval();showNow();reschedule();}void apply(TitleOptions o){title=o.title();subtitle=o.subtitle();timings(o.fadeIn(),o.stay(),o.fadeOut());repeatInterval(o.repeatInterval());lifetime(o.lifetime());showNow();}
-        public void title(String value){title=value==null?"":value;showNow();}public void subtitle(String value){subtitle=value==null?"":value;showNow();}public void timings(Duration a,Duration b,Duration c){fadeIn=valid(a);stay=valid(b);fadeOut=valid(c);}
+        public synchronized void title(String value){title=value==null?"":value;showNow();}public synchronized void subtitle(String value){subtitle=value==null?"":value;showNow();}public synchronized void timings(Duration a,Duration b,Duration c){fadeIn=valid(a);stay=valid(b);fadeOut=valid(c);}
         public synchronized void repeatInterval(Duration value){repeat=valid(value);reschedule();}private synchronized void reschedule(){cancel(refresh);if(active&&!repeat.isZero())refresh=scheduler.scheduleAtFixedRate(this::showNow,repeat.toMillis(),repeat.toMillis(),TimeUnit.MILLISECONDS);}
-        public void showNow(){Player p=player();if(active&&!paused&&p!=null)p.showTitle(Title.title(VelocityMessages.component(title,format),VelocityMessages.component(subtitle,format),Title.Times.times(fadeIn,stay,fadeOut)));}
-        public void clear(){Player p=player();if(p!=null)p.clearTitle();}public synchronized void close(){if(!active)return;active=false;titles.remove(key,this);cancel(refresh);cancel(expiry);clear();}
+        public synchronized void showNow(){Player p=player();if(active&&!paused&&p!=null)p.showTitle(Title.title(VelocityMessages.component(title,format),VelocityMessages.component(subtitle,format),Title.Times.times(fadeIn,stay,fadeOut)));}
+        public void clear(){Player p=player();if(p!=null)p.clearTitle();}public synchronized void release(){if(!active)return;active=false;titles.remove(key,this);cancel(refresh);cancel(expiry);}public synchronized void close(){if(!active)return;release();clear();}
     }
     private final class Boss extends Base implements BossBarHandle{
         final BossBar bar;volatile float progress;volatile ScheduledFuture<?> animation;

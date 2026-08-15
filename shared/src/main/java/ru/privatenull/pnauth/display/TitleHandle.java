@@ -7,4 +7,6 @@ public interface TitleHandle extends DisplayHandle {
     void repeatInterval(Duration interval);
     void showNow();
     void clear();
+    /** Releases the server-side handle without sending a clear packet to the client. */
+    void release();
 }

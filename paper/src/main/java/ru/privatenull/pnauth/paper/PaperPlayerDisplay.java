@@ -192,14 +192,14 @@ public final class PaperPlayerDisplay implements PlayerDisplay, AutoCloseable {
                     Component.text(title), Component.text(subtitle), Title.Times.times(fadeIn, stay, fadeOut))));
         }
         @Override public void clear() { withPlayer(Player::clearTitle); }
-        @Override public void close() {
+        @Override public void release() {
             if (!active) return;
             active = false;
             titles.remove(key, this);
             cancel(refresh);
             finish();
-            clear();
         }
+        @Override public void close() { if (!active) return; release(); clear(); }
     }
 
     private final class PlayerBossBar extends Base implements BossBarHandle {

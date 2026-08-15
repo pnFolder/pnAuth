@@ -137,6 +137,10 @@ public final class PnAuthVelocityPlugin {
             platform = new VelocityPlatform(this, proxy, playerDisplay, config.messageFormat(), playerDialogs);
             auth.installPlatform(platform);
             messages = AuthMessages.load(dataDirectory.resolve("messages"), config.locale(), config.messageFormat());
+            auth.installProcessingTitle(config.processingTitle(), config.messageFormat(), messages.text("auth.processing.title"),
+                    messages.text("auth.processing.subtitle"), messages.text("auth.processing.success.title"),
+                    messages.text("auth.processing.success.subtitle"), messages.text("auth.processing.failure.title"),
+                    messages.text("auth.processing.failure.subtitle"));
             actions = new VelocityAuthActions(proxy, proxySettings, messages, config.messageFormat());
             migration = new AuthMigrationService(repository);
             AuthCommandService commandService = new AuthCommandService(auth, messages, actions, migration, config.features());

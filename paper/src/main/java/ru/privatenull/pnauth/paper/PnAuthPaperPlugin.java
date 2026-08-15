@@ -48,6 +48,10 @@ public final class PnAuthPaperPlugin extends JavaPlugin implements Listener {
 
             AuthMessages messages = AuthMessages.load(
                     dataFolder.resolve("messages"), config.locale(), config.messageFormat());
+            auth.installProcessingTitle(config.processingTitle(), config.messageFormat(), messages.text("auth.processing.title"),
+                    messages.text("auth.processing.subtitle"), messages.text("auth.processing.success.title"),
+                    messages.text("auth.processing.success.subtitle"), messages.text("auth.processing.failure.title"),
+                    messages.text("auth.processing.failure.subtitle"));
             migration = new AuthMigrationService(repository);
             AuthCommandService commandService = new AuthCommandService(
                     auth, messages, new PaperAuthActions(this, messages), migration, config.features());

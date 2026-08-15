@@ -31,6 +31,9 @@ class AuthConfigTest {
         assertTrue(generated.contains("Supported values: ru, en"));
         assertTrue(generated.contains("limbo:"));
         assertTrue(generated.contains("messages:"));
+        assertTrue(generated.contains("processing-title:"));
+        assertEquals(ProcessingTitleSettings.Type.GRADIENT, config.processingTitle().animation().type());
+        assertEquals(12, config.processingTitle().animation().frameCount());
         assertEquals(MessageFormat.LEGACY, config.messageFormat());
     }
 

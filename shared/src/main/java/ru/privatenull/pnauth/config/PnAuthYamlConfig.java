@@ -206,6 +206,7 @@ public final class PnAuthYamlConfig extends YamlSerializable {
     @NewLine
     public static final class Ui {
         public Dialogs dialogs = new Dialogs();
+        public ProcessingTitle processingTitle = new ProcessingTitle();
         public boolean title = false;
         public boolean actionbar = false;
 
@@ -214,6 +215,34 @@ public final class PnAuthYamlConfig extends YamlSerializable {
             public boolean fallbackToCommands = true;
             public boolean allowPlayerPreference = true;
             public int minClientProtocol = 771;
+        }
+
+        public static final class ProcessingTitle {
+            @Comment(@CommentValue("Show an animated title only while a password is actually being processed"))
+            public boolean enabled = true;
+            public Animation animation = new Animation();
+            public Timings timings = new Timings();
+
+            public static final class Animation {
+                @Comment(@CommentValue("NONE or GRADIENT"))
+                public String type = "GRADIENT";
+                public List<String> colors = List.of("#d8b4fe", "#f0abfc", "#c4b5fd");
+                @Comment(@CommentValue("Number of gradient positions in one seamless animation cycle"))
+                public int frameCount = 12;
+            }
+
+            public static final class Timings {
+                public int frameIntervalMillis = 120;
+                @Comment(@CommentValue("Keep the indicator visible for this long even if hashing finishes sooner; authentication is not delayed"))
+                public int minimumDisplayMillis = 2500;
+                public int resultFadeInMillis = 0;
+                @Comment(@CommentValue("How long the success or failure title stays before fading out"))
+                public int resultDisplayMillis = 1000;
+                public int resultFadeOutMillis = 500;
+                public int fadeInMillis = 0;
+                public int stayMillis = 5000;
+                public int fadeOutMillis = 0;
+            }
         }
     }
 

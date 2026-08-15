@@ -18,6 +18,7 @@ public final class PnAuthConfigManager {
             "config-version:",
             "setup-lifetime-seconds:",
             "restore-on-same-ip:",
+            "processing-title:",
             "paper:"
     );
     private final Path file;
