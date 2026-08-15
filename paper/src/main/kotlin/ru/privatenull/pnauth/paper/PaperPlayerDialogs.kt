@@ -286,9 +286,9 @@ class PaperPlayerDialogs(private val plugin: Plugin) : PlayerDialogs, AutoClosea
                 is DialogBody.Item -> {
                     value["type"] = "minecraft:item"
                     value["item"] = body.itemStack
-                    if (body.description != null) {
+                    body.description?.let { desc ->
                         value["description"] = mapOf(
-                            "contents" to component(body.description!!),
+                            "contents" to component(desc),
                             "width" to body.descriptionWidth
                         )
                     }
@@ -363,7 +363,7 @@ class PaperPlayerDialogs(private val plugin: Plugin) : PlayerDialogs, AutoClosea
     private fun button(button: DialogButton): Map<String, Any> {
         val value = LinkedHashMap<String, Any>()
         value["label"] = component(button.label)
-        if (button.tooltip != null) value["tooltip"] = component(button.tooltip!!)
+        button.tooltip?.let { value["tooltip"] = component(it) }
         value["width"] = button.width
         if (button.action !is DialogAction.None) value["action"] = action(button.action)
         return value

@@ -96,8 +96,7 @@ class PacketEventsVelocityDialogService(
             val action = packet.id.toString()
             if (!ACTION_ID.matcher(action).matches()) return
             event.isCancelled = true
-            val player = event.getPlayer<Player>()
-            if (player == null) return
+            val player: Player = event.getPlayer() ?: return
             val payload = packet.payload
             val compound = if (payload is NBTCompound) payload else NBTCompound()
             val values = HashMap<String, String>()

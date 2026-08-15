@@ -113,11 +113,12 @@ object PacketEventsDialogMapper {
                     result.add(PlainMessageDialogBody(PlainMessage(body.content, body.width)))
                 }
                 is DialogBody.Item -> {
-                    val description = if (body.description == null) null
-                    else PlainMessage(body.description!!, body.descriptionWidth)
+                    val description = body.description?.let { PlainMessage(it, body.descriptionWidth) }
+                    @Suppress("DEPRECATION")
+                    val item = ItemStack.decode(compound(body.itemStack), ClientVersion.V_1_21_4)
                     result.add(
                         ItemDialogBody(
-                            ItemStack.decode(compound(body.itemStack), ClientVersion.V_1_21_4),
+                            item,
                             description,
                             body.showDecorations,
                             body.showTooltip,

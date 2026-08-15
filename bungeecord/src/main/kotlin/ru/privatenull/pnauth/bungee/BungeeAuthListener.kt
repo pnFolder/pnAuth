@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package ru.privatenull.pnauth.bungee
 
 import net.md_5.bungee.api.ProxyServer

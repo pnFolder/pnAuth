@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package ru.privatenull.pnauth.bungee
 
 import net.kyori.adventure.text.Component

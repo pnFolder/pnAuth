@@ -55,12 +55,13 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
 
     override fun supported(player: PnPlayer): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
-        return packets.playerManager.getClientVersion(nativeValue)
-            .isNewerThanOrEquals(ClientVersion.V_1_21_4)
+        val version = packets.playerManager.getClientVersion(nativeValue)
+        if (version == ClientVersion.UNKNOWN) return true
+        return version.isNewerThanOrEquals(ClientVersion.V_1_21_4)
     }
 
     override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
-        if (!supported(player)) throw UnsupportedOperationException("Native dialogs require client 1.21.6+")
+        if (!supported(player)) throw UnsupportedOperationException("Native dialogs require client 1.21.4+")
         val key = PlayerResourceKey(player.uniqueId(), dialog.id)
         return handles.compute(key) { _, current ->
             if (current == null || !current.active()) Handle(key, dialog)
@@ -203,7 +204,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             }
             try {
                 var playerId = platformPlayerId(event.getPlayer())
-                if (playerId == null && event.user != null) playerId = event.user.uuid
+                if (playerId == null) playerId = event.user.uuid
                 var handle = if (playerId == null) null else actions[PlayerResourceKey(playerId, actionId)]
                 if (handle == null) handle = actionForConnection(actionId, event)
                 if (handle == null) {
