@@ -18,6 +18,29 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DialogFormTest {
     @Test
+    void buildsServerLinksAndRoutesGeneratedExitAction() {
+        AtomicReference<Boolean> exited = new AtomicReference<>(false);
+        ServerLinksForm form = ServerLinksForm.builder(Component.text("Links"))
+                .body(Component.text("Official resources"), 400)
+                .columns(3)
+                .buttonWidth(220)
+                .exitButton(Component.text("Close"), response -> exited.set(true))
+                .build();
+        FakeDialogs dialogs = new FakeDialogs();
+
+        dialogs.show(player(), form);
+
+        DialogType.ServerLinks type = assertInstanceOf(DialogType.ServerLinks.class, dialogs.dialog.type());
+        assertEquals(3, type.columns());
+        assertEquals(220, type.buttonWidth());
+        DialogAction.DynamicCustom action = assertInstanceOf(DialogAction.DynamicCustom.class,
+                type.exitAction().action());
+        assertTrue(action.id().startsWith("pnauth:server_links_exit_"));
+        dialogs.handle.publish(new DialogResponse(action.id(), Map.of(), false));
+        assertTrue(exited.get());
+    }
+
+    @Test
     void generatesTransportIdsAndRoutesButtonWithoutExposingThem() {
         AtomicReference<String> submitted = new AtomicReference<>();
         DialogForm form = DialogForm.builder(Component.text("Verification"))
