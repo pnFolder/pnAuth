@@ -3,16 +3,18 @@ package ru.privatenull.pnauth.bungee
 import net.md_5.bungee.api.ProxyServer
 import net.md_5.bungee.api.config.ServerInfo
 import net.md_5.bungee.api.connection.ProxiedPlayer
-import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.platform.Proxy
+import ru.privatenull.pnauth.routing.ServerBalancerFactory
 import java.net.InetSocketAddress
 import java.util.UUID
 
 internal class BungeeAuthActions(
     private val proxy: ProxyServer,
     private val settings: ProxySettings,
-    private val messages: AuthMessages
+    private val messages: AuthMessages,
+    private val proxyAdapter: Proxy? = null
 ) : ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter {
 
     override fun authenticated(uniqueId: UUID) {
@@ -93,11 +95,14 @@ internal class BungeeAuthActions(
     }
 
     private fun target(player: ProxiedPlayer): ServerInfo? {
-        var name = settings.backendServer
+        var targets = settings.getEffectiveBackendServers()
         val host: InetSocketAddress? = player.pendingConnection.virtualHost
         if (host != null) {
-            name = settings.forcedHosts.getOrDefault(host.hostString.lowercase(), name)
+            val forced = settings.forcedHosts[host.hostString.lowercase()]
+            if (forced != null) targets = listOf(forced)
         }
-        return proxy.getServerInfo(name)
+        val balancer = ServerBalancerFactory.create(settings.balancerMode, settings.maxPlayersPerServer, settings.serverLimits)
+        val selected = balancer.selectServer(targets, proxyAdapter).orElse(settings.backendServer)
+        return proxy.getServerInfo(selected)
     }
 }

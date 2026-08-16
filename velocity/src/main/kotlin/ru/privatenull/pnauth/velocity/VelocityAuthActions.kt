@@ -2,17 +2,19 @@ package ru.privatenull.pnauth.velocity
 
 import com.velocitypowered.api.proxy.Player
 import com.velocitypowered.api.proxy.ProxyServer
-import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.message.AuthMessages
 import ru.privatenull.pnauth.message.MessageFormat
+import ru.privatenull.pnauth.platform.Proxy
+import ru.privatenull.pnauth.routing.ServerBalancerFactory
 import java.util.UUID
 
 internal class VelocityAuthActions(
     private val proxy: ProxyServer,
     private val settings: ProxySettings,
     private val messages: AuthMessages,
-    private val messageFormat: MessageFormat
+    private val messageFormat: MessageFormat,
+    private val proxyAdapter: Proxy? = null
 ) : ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter {
 
     override fun authenticated(uniqueId: UUID) {
@@ -55,12 +57,17 @@ internal class VelocityAuthActions(
 
         if (!settings.hasBackendServer()) return
         if (player.currentServer.isEmpty) return
-        val serverName = player.virtualHost
-            .map { host ->
-                settings.forcedHosts[host.hostString.lowercase()] ?: settings.backendServer
-            }
-            .orElse(settings.backendServer)
-        val target = proxy.getServer(serverName).orElse(null)
+
+        var targets = settings.getEffectiveBackendServers()
+        val virtualHost = player.virtualHost.orElse(null)
+        if (virtualHost != null) {
+            val forced = settings.forcedHosts[virtualHost.hostString.lowercase()]
+            if (forced != null) targets = listOf(forced)
+        }
+        val balancer = ServerBalancerFactory.create(settings.balancerMode, settings.maxPlayersPerServer, settings.serverLimits)
+        val selected = balancer.selectServer(targets, proxyAdapter).orElse(settings.backendServer)
+        val target = proxy.getServer(selected).orElse(null)
+
         if (target == null) {
             player.disconnect(VelocityMessages.component(messages.text("access.backend_missing"), messageFormat))
             return

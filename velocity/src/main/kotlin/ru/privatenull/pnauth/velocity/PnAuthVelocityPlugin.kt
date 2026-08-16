@@ -103,7 +103,7 @@ class PnAuthVelocityPlugin @Inject constructor(
                 .build()
             bootstrap = boot
 
-            vActions = VelocityAuthActions(proxy, boot.proxySettings, boot.messages, config.messageFormat)
+            vActions = VelocityAuthActions(proxy, boot.proxySettings, boot.messages, config.messageFormat, proxyFacade)
             actions = vActions
 
             val vDialogs = VelocityDialogCoordinator(

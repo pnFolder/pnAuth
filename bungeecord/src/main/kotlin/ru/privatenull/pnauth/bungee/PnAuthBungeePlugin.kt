@@ -96,7 +96,7 @@ class PnAuthBungeePlugin : Plugin() {
                 .build()
             bootstrap = boot
 
-            actions = BungeeAuthActions(proxy, boot.proxySettings, boot.messages)
+            actions = BungeeAuthActions(proxy, boot.proxySettings, boot.messages, proxyFacade)
 
             val commandRegistry = CommandRegistry()
             commandRegistry.register(boot.commandService)

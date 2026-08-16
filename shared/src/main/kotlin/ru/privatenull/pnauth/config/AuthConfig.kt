@@ -93,7 +93,12 @@ data class AuthConfig(
                     servers.requireAuthBeforeServer,
                     servers.authServer,
                     servers.backendServer,
-                    lowerCaseKeys(servers.forcedHosts)
+                    lowerCaseKeys(servers.forcedHosts),
+                    servers.backendServers,
+                    servers.authServers,
+                    enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),
+                    servers.maxPlayersPerServer,
+                    lowerCaseKeysInt(servers.serverLimits)
                 ),
                 AccessSettings(
                     access.blockChat,
@@ -280,6 +285,17 @@ data class AuthConfig(
             val normalized = value?.trim()?.lowercase(Locale.ROOT) ?: "ru"
             if (normalized == "ru" || normalized == "en") return normalized
             throw IOException("Unsupported locale: $value. Supported locales: ru, en")
+        }
+
+        private fun lowerCaseKeysInt(source: Map<String, Int>?): Map<String, Int> {
+            if (source == null || source.isEmpty()) return emptyMap()
+            val result = LinkedHashMap<String, Int>(source.size)
+            source.forEach { (key, value) ->
+                if (key.isNotBlank()) {
+                    result[key.trim().lowercase(Locale.ROOT)] = value
+                }
+            }
+            return result
         }
 
         private object SetDefaults {

@@ -114,6 +114,21 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
         @Comment(CommentValue("Server a player joins after successful authentication"))
         @JvmField var backendServer: String = "hub"
 
+        @Comment(CommentValue("List of target backend servers for load balancing"))
+        @JvmField var backendServers: List<String> = ArrayList()
+
+        @Comment(CommentValue("List of target auth servers for load balancing"))
+        @JvmField var authServers: List<String> = ArrayList()
+
+        @Comment(CommentValue("Load balancer strategy: LEAST_PLAYERS, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM, FILLING"))
+        @JvmField var balancerMode: String = "LEAST_PLAYERS"
+
+        @Comment(CommentValue("Maximum players per server when using FILLING mode"))
+        @JvmField var maxPlayersPerServer: Int = 100
+
+        @Comment(CommentValue("Per-server custom max player limits (e.g. hub-small: 50, hub-large: 250)"))
+        @JvmField var serverLimits: Map<String, Int> = LinkedHashMap()
+
         @Comment(CommentValue("Keep unauthenticated players on auth-server (recommended for every public network)"))
         @JvmField var requireAuthBeforeServer: Boolean = true
 
