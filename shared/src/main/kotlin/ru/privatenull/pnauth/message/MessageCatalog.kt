@@ -79,6 +79,10 @@ object MessageCatalog {
         values["subtitle.login.success"] = "<gradient:#AAFFAA:#FFFFFF>Successfully authenticated!</gradient>"
         values["title.register.success"] = "<gradient:#55FFFF:#00AAFF><bold>REGISTRATION SUCCESS</bold></gradient>"
         values["subtitle.register.success"] = "<gradient:#AAFFFF:#FFFFFF>Welcome to the server!</gradient>"
+        values["title.error"] = "<gradient:#FF5555:#AA0000><bold>AUTHENTICATION ERROR</bold></gradient>"
+        values["subtitle.error"] = "<gradient:#FFAAAA:#FFFFFF>{error}</gradient>"
+        values["title.processing"] = "VERIFYING PASSWORD..."
+        values["subtitle.processing"] = "<gradient:#8b5cf6:#38bdf8>Please wait a moment...</gradient>"
         return values
     }
 
@@ -153,6 +157,10 @@ object MessageCatalog {
         values["subtitle.login.success"] = "<gradient:#AAFFAA:#FFFFFF>Вы успешно авторизовались!</gradient>"
         values["title.register.success"] = "<gradient:#55FFFF:#00AAFF><bold>РЕГИСТРАЦИЯ ЗАВЕРШЕНА</bold></gradient>"
         values["subtitle.register.success"] = "<gradient:#AAFFFF:#FFFFFF>Вы успешно зарегистрировались!</gradient>"
+        values["title.error"] = "<gradient:#FF5555:#AA0000><bold>ОШИБКА ВХОДА</bold></gradient>"
+        values["subtitle.error"] = "<gradient:#FFAAAA:#FFFFFF>{error}</gradient>"
+        values["title.processing"] = "ПРОВЕРКА ПАРОЛЯ..."
+        values["subtitle.processing"] = "<gradient:#8b5cf6:#38bdf8>Пожалуйста, подождите...</gradient>"
         return values
     }
 

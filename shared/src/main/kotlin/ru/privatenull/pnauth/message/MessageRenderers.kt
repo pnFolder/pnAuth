@@ -183,6 +183,8 @@ object MessageRenderers {
             result = result.replace("<$key>", colorValue).replace("</$key>", "&r")
         }
         result = replaceMiniHexColors(result)
+            .replace(Regex("(?i)<gradient:[^>]+>"), "&a&l")
+            .replace(Regex("(?i)</gradient>"), "&r")
             .replace(Regex("(?i)</#[0-9a-f]{6}>"), "&r")
             .replace(Regex("(?i)<(?:bold|b)>"), "&l")
             .replace(Regex("(?i)<(?:italic|i)>"), "&o")

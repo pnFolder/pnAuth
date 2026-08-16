@@ -152,6 +152,7 @@ class VelocityDialogCoordinator(
         } else {
             listOf(credentials.password)
         }
+        showProcessingTitle(player)
         commands.execute(
             AuthCommandRequest(playerId, player.username, command, arguments) { player.hasPermission(it) }
         ).whenComplete { output, error ->
@@ -201,6 +202,21 @@ class VelocityDialogCoordinator(
 
     private fun closeWithError(player: Player, error: String) {
         clear(player)
+
+        // Display error Title & Subtitle on screen
+        val titleComp = VelocityMessages.component(messages.text("title.error"), format)
+        val subtitleComp = VelocityMessages.component(messages.text("subtitle.error", mapOf("error" to error)), format)
+        val titleObj = net.kyori.adventure.title.Title.title(
+            titleComp,
+            subtitleComp,
+            net.kyori.adventure.title.Title.Times.times(
+                java.time.Duration.ofMillis(200),
+                java.time.Duration.ofMillis(2500),
+                java.time.Duration.ofMillis(500)
+            )
+        )
+        player.showTitle(titleObj)
+
         player.sendMessage(
             VelocityMessages.component(messages.text("dialog.error", mapOf("error" to error)), format)
                 .append(Component.space()).append(
@@ -213,6 +229,26 @@ class VelocityDialogCoordinator(
                         )
                 )
         )
+    }
+
+    private fun showProcessingTitle(player: Player) {
+        val frames = ru.privatenull.pnauth.display.ProcessingTitleAnimation.generateFrames(
+            messages.text("title.processing"),
+            ru.privatenull.pnauth.config.ProcessingTitleSettings.Animation.defaults()
+        )
+        val subtitle = VelocityMessages.component(messages.text("subtitle.processing"), format)
+        if (frames.isNotEmpty()) {
+            val titleObj = net.kyori.adventure.title.Title.title(
+                VelocityMessages.component(frames[0], format),
+                subtitle,
+                net.kyori.adventure.title.Title.Times.times(
+                    java.time.Duration.ZERO,
+                    java.time.Duration.ofMillis(1000),
+                    java.time.Duration.ofMillis(250)
+                )
+            )
+            player.showTitle(titleObj)
+        }
     }
 
     private fun component(key: String): Component {

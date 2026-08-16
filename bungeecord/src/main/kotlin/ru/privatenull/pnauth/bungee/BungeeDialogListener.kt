@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
 
 /** Bungee lifecycle bridge; mirrors the working Java implementation exactly. */
 class BungeeDialogListener internal constructor(
-    private val plugin: Plugin,
+    private val plugin: PnAuthBungeePlugin,
     private val auth: AuthApi,
     private val commands: AuthCommandService,
     private val messages: AuthMessages,
@@ -94,6 +94,7 @@ class BungeeDialogListener internal constructor(
 
     private fun execute(player: ProxiedPlayer, command: String, args: List<String>) {
         clearNativeDialog(player.uniqueId)
+        showProcessingTitle(player)
         commands.execute(
             AuthCommandRequest(player.uniqueId, player.name, command, args) { player.hasPermission(it) }
         ).thenAccept { result ->
@@ -243,6 +244,18 @@ class BungeeDialogListener internal constructor(
 
     private fun sendDialogError(player: ProxiedPlayer, error: String) {
         clearNativeDialog(player.uniqueId)
+
+        // Display error Title & Subtitle on screen via native BungeeComponentAdapter
+        val titleComp = BungeeMessages.component(messages.text("title.error"), messages.format)
+        val subtitleComp = BungeeMessages.component(messages.text("subtitle.error", mapOf("error" to error)), messages.format)
+        val titleObj = plugin.proxy.createTitle()
+            .title(titleComp)
+            .subTitle(subtitleComp)
+            .fadeIn(5)
+            .stay(50)
+            .fadeOut(10)
+        player.sendTitle(titleObj)
+
         val line = mutableListOf<BaseComponent>()
         line.addAll(BungeeMessages.components(messages.text("dialog.error", mapOf("error" to error)), messages.format).toList())
         line.add(net.md_5.bungee.api.chat.TextComponent(" "))
@@ -252,6 +265,24 @@ class BungeeDialogListener internal constructor(
             line.add(part)
         }
         player.sendMessage(*line.toTypedArray())
+    }
+
+    private fun showProcessingTitle(player: ProxiedPlayer) {
+        val frames = ru.privatenull.pnauth.display.ProcessingTitleAnimation.generateFrames(
+            messages.text("title.processing"),
+            ru.privatenull.pnauth.config.ProcessingTitleSettings.Animation.defaults()
+        )
+        val subtitleComp = BungeeMessages.component(messages.text("subtitle.processing"), messages.format)
+        if (frames.isNotEmpty()) {
+            val titleComp = BungeeMessages.component(frames[0], messages.format)
+            val titleObj = plugin.proxy.createTitle()
+                .title(titleComp)
+                .subTitle(subtitleComp)
+                .fadeIn(0)
+                .stay(20)
+                .fadeOut(5)
+            player.sendTitle(titleObj)
+        }
     }
 
     private inner class UiCommand : Command("_pnauthui") {

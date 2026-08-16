@@ -31,7 +31,7 @@ internal class BungeeAuthActions(
     private fun authenticated(player: ProxiedPlayer?, isRegistration: Boolean = false) {
         if (player == null) return
 
-        // Display success Title & Subtitle with gradient
+        // Display success Title & Subtitle with gradient via native BungeeComponentAdapter
         val titleKey = if (isRegistration) "title.register.success" else "title.login.success"
         val subtitleKey = if (isRegistration) "subtitle.register.success" else "subtitle.login.success"
         val titleComp = BungeeMessages.component(messages.text(titleKey), messages.format())

@@ -5,7 +5,6 @@ plugins {
 
 def pluginVersion = version.toString()
 def generatedSources = layout.buildDirectory.dir('generated/sources/pnauth')
-
 configurations.runtimeClasspath {
     // PacketEvents is a required external plugin and owns Adventure on BungeeCord.
     // Bundling a second copy causes loader-constraint violations in its dialog API.
@@ -14,6 +13,9 @@ configurations.runtimeClasspath {
     exclude group: 'net.kyori', module: 'examination-api'
     exclude group: 'net.kyori', module: 'examination-string'
 }
+
+
+
 
 sourceSets {
     main {
