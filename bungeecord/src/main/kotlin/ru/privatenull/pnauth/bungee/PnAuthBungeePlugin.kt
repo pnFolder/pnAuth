@@ -3,17 +3,16 @@ package ru.privatenull.pnauth.bungee
 import com.github.retrooper.packetevents.PacketEvents
 import net.md_5.bungee.api.plugin.Plugin
 import ru.privatenull.pnauth.api.AuthApi
-import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.command.CommandRegistry
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
-import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter
+import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
-import java.net.InetSocketAddress
 import java.nio.file.Path
 import java.util.UUID
 import java.util.function.Consumer
@@ -26,8 +25,8 @@ class PnAuthBungeePlugin : Plugin() {
     private var dialogListener: BungeeDialogListener? = null
     private var authTasks: BungeeAuthTasks? = null
     private var playerDisplay: BungeePlayerDisplay? = null
+    private var playerDialogs: PacketEventsPlayerDialogs? = null
     private var platform: BungeePlatform? = null
-    private var playerDialogs: PlayerDialogs? = null
     private var dependencyReady: Boolean = false
 
     override fun onLoad() {
@@ -72,13 +71,14 @@ class PnAuthBungeePlugin : Plugin() {
 
             var actions: BungeeAuthActions? = null
 
-            // Fluent bootstrap builder
+            // Fluent bootstrap using standardized PlatformAdapters
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataFolder)
-                .logger { message -> logger.info(message) }
+                .logger(PlatformLoggerAdapter.of { message -> logger.info(message) })
                 .platform(bPlatform)
                 .display(display)
-                .authBridge(object : AuthPlatformBridge {
+                .dialogs(dialogs)
+                .authBridge(object : PlatformAuthBridgeAdapter {
                     override fun authenticated(uniqueId: UUID) { actions?.authenticated(uniqueId) }
                     override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { actions?.authenticated(uniqueId, isRegistration) }
                     override fun authenticated(username: String) { actions?.authenticated(username) }
@@ -91,16 +91,6 @@ class PnAuthBungeePlugin : Plugin() {
             bootstrap = boot
 
             actions = BungeeAuthActions(proxy, boot.proxySettings, boot.messages)
-
-            val limbo = boot.limbo
-            if (config.limbo.enabled && limbo != null) {
-                val serverName = config.limbo.serverName
-                proxy.servers[serverName] = proxy.constructServerInfo(
-                    serverName,
-                    InetSocketAddress(limbo.host(), limbo.port()),
-                    "pnAuth authentication limbo", false
-                )
-            }
 
             val commandRegistry = CommandRegistry()
             commandRegistry.register(boot.commandService)
@@ -131,7 +121,7 @@ class PnAuthBungeePlugin : Plugin() {
         pluginManager.registerListener(this, listener)
         pluginManager.registerListener(this, dialogListener)
         pluginManager.registerListener(this, authTasks)
-        logger.info("pnAuth enabled for BungeeCord.")
+        logger.info("pnAuth enabled for BungeeCord via PlatformAdapter architecture.")
     }
 
     override fun onDisable() {
@@ -149,14 +139,7 @@ class PnAuthBungeePlugin : Plugin() {
         commandRegistrar?.close()
         bootstrap?.close()
         playerDisplay?.close()
-        val currentDialogs = playerDialogs
-        if (currentDialogs is AutoCloseable) {
-            try {
-                currentDialogs.close()
-            } catch (exception: Exception) {
-                logger.warning("Could not close the pnAuth PacketEvents adapter: ${exception.message}")
-            }
-        }
+        playerDialogs?.close()
     }
 
     fun getApi(): AuthApi? = bootstrap?.authService

@@ -10,21 +10,19 @@ import com.velocitypowered.api.plugin.Dependency
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.plugin.annotation.DataDirectory
 import com.velocitypowered.api.proxy.ProxyServer
-import com.velocitypowered.api.proxy.server.RegisteredServer
-import com.velocitypowered.api.proxy.server.ServerInfo
 import net.kyori.adventure.text.Component
 import org.slf4j.Logger
 import ru.privatenull.pnauth.api.AuthApi
-import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter
+import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator
-import java.net.InetSocketAddress
 import java.nio.file.Path
 import java.util.UUID
 import java.util.function.Function
@@ -45,11 +43,10 @@ class PnAuthVelocityPlugin @Inject constructor(
     private var commandRegistrar: VelocityCommandRegistrar? = null
     private var actions: VelocityAuthActions? = null
     private var authTasks: VelocityAuthTasks? = null
-    private var limboServer: RegisteredServer? = null
     private var dialogs: VelocityDialogCoordinator? = null
     private var playerDisplay: VelocityPlayerDisplay? = null
-    private var platform: VelocityPlatform? = null
     private var playerDialogs: PacketEventsPlayerDialogs? = null
+    private var platform: VelocityPlatform? = null
 
     @Subscribe
     fun onProxyInitialization(event: ProxyInitializeEvent) {
@@ -81,13 +78,14 @@ class PnAuthVelocityPlugin @Inject constructor(
 
             var vActions: VelocityAuthActions? = null
 
-            // Fluent bootstrap builder
+            // Fluent bootstrap using standardized PlatformAdapters
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataDirectory)
-                .logger { message -> logger.info(message) }
+                .logger(PlatformLoggerAdapter.of { message -> logger.info(message) })
                 .platform(pForm)
                 .display(display)
-                .authBridge(object : AuthPlatformBridge {
+                .dialogs(pDialogs)
+                .authBridge(object : PlatformAuthBridgeAdapter {
                     override fun authenticated(uniqueId: UUID) { vActions?.authenticated(uniqueId) }
                     override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { vActions?.authenticated(uniqueId, isRegistration) }
                     override fun authenticated(username: String) { vActions?.authenticated(username) }
@@ -102,14 +100,6 @@ class PnAuthVelocityPlugin @Inject constructor(
             vActions = VelocityAuthActions(proxy, boot.proxySettings, boot.messages, config.messageFormat)
             actions = vActions
 
-            val limbo = boot.limbo
-            if (config.limbo.enabled && limbo != null) {
-                val serverName = config.limbo.serverName
-                limboServer = proxy.registerServer(
-                    ServerInfo(serverName, InetSocketAddress(limbo.host(), limbo.port()))
-                )
-            }
-
             val vDialogs = VelocityDialogCoordinator(
                 proxy, boot.authService, boot.commandService, boot.messages,
                 config.features, config.messageFormat, config.security.maxPasswordLength, boot.proxySettings, pForm
@@ -122,7 +112,7 @@ class PnAuthVelocityPlugin @Inject constructor(
 
             proxy.eventManager.register(
                 this, VelocityAuthListener(
-                    proxy, boot.authService, boot.lifecycleCoordinator, config.messageFormat, limboServer,
+                    proxy, boot.authService, boot.lifecycleCoordinator, config.messageFormat, null,
                     boot.proxySettings, vDialogs, boot.messages
                 )
             )
@@ -137,7 +127,7 @@ class PnAuthVelocityPlugin @Inject constructor(
             throw IllegalStateException("pnAuth could not be initialized", exception)
         }
 
-        logger.info("pnAuth enabled for Velocity.")
+        logger.info("pnAuth enabled for Velocity via PlatformAdapter architecture.")
     }
 
     @Subscribe
@@ -150,9 +140,6 @@ class PnAuthVelocityPlugin @Inject constructor(
     fun onProxyShutdown(event: ProxyShutdownEvent) {
         bootstrap?.close()
         playerDisplay?.close()
-        limboServer?.let { server ->
-            proxy.unregisterServer(server.serverInfo)
-        }
         commandRegistrar?.close()
         authTasks?.close()
         dialogs?.close()

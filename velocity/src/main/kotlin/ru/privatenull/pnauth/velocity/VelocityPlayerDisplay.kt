@@ -32,7 +32,17 @@ import java.util.concurrent.atomic.AtomicInteger
 class VelocityPlayerDisplay(
     private val proxy: ProxyServer,
     private val format: MessageFormat
-) : PlayerDisplay, AutoCloseable {
+) : ru.privatenull.pnauth.platform.adapter.PlatformDisplayAdapter, AutoCloseable {
+
+    private val titleAdapter = ru.privatenull.pnauth.velocity.display.VelocityTitleAdapter(proxy, format)
+
+    override fun showTitle(uniqueId: UUID, builder: ru.privatenull.pnauth.display.TitleBuilder) {
+        titleAdapter.showTitle(uniqueId, builder)
+    }
+
+    override fun clearTitle(uniqueId: UUID) {
+        titleAdapter.clearTitle(uniqueId)
+    }
 
     private val actions = ConcurrentHashMap<PlayerResourceKey, Action>()
     private val titles = ConcurrentHashMap<PlayerResourceKey, Titles>()

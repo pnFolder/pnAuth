@@ -13,7 +13,7 @@ internal class BungeeAuthActions(
     private val proxy: ProxyServer,
     private val settings: ProxySettings,
     private val messages: AuthMessages
-) : AuthPlatformBridge {
+) : ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter {
 
     override fun authenticated(uniqueId: UUID) {
         authenticated(uniqueId, false)

@@ -48,7 +48,7 @@ import java.util.function.Function
 class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val nativePlayer: Function<UUID, Any?>,
     private val diagnostics: Consumer<String> = Consumer { }
-) : PlayerDialogs, AutoCloseable {
+) : ru.privatenull.pnauth.platform.adapter.PlatformDialogAdapter, AutoCloseable {
 
     private val packets = PacketEvents.getAPI()
     private val handles: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()

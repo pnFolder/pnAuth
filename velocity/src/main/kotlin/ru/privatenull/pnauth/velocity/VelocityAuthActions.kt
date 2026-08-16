@@ -13,7 +13,7 @@ internal class VelocityAuthActions(
     private val settings: ProxySettings,
     private val messages: AuthMessages,
     private val messageFormat: MessageFormat
-) : AuthPlatformBridge {
+) : ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter {
 
     override fun authenticated(uniqueId: UUID) {
         authenticated(uniqueId, false)
