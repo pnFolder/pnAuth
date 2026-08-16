@@ -18,8 +18,8 @@ object DevFlags {
     /**
      * When set to true, authenticated players remain on the authentication server / limbo
      * instead of being connected/routed to the backend server.
-     * Set to false or toggle off when done testing.
+     * Set to false when done testing.
      */
     @JvmField
-    var STAY_ON_AUTH_SERVER: Boolean = false
+    var STAY_ON_AUTH_SERVER: Boolean = true
 }

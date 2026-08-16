@@ -51,7 +51,7 @@ class VelocityAuthListener(
                         player.disconnect(VelocityMessages.component(lifecycle.message("access.database"), messageFormat))
                         return@handle null
                     }
-                    if (decision.route == JoinDecision.Route.BACKEND) {
+                    if (decision.route == JoinDecision.Route.BACKEND && !ru.privatenull.pnauth.dev.DevFlags.STAY_ON_AUTH_SERVER) {
                         val backend = resolveBackend(player)
                         event.setInitialServer(backend ?: authServer())
                     } else {

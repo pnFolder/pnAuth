@@ -14,11 +14,13 @@ object VelocityMessages {
         val value = message ?: ""
         val selected = format ?: MessageFormat.LEGACY
         return try {
+            if (selected == MessageFormat.MINI_MESSAGE || (value.contains("<") && value.contains(">"))) {
+                return MiniMessage.miniMessage().deserialize(value)
+            }
             when (selected) {
-                MessageFormat.MINI_MESSAGE -> MiniMessage.miniMessage().deserialize(value)
                 MessageFormat.JSON -> GsonComponentSerializer.gson().deserialize(value)
                 MessageFormat.PLAIN -> Component.text(value)
-                MessageFormat.LEGACY -> LegacyComponentSerializer.legacyAmpersand()
+                else -> LegacyComponentSerializer.legacyAmpersand()
                     .deserialize(MessageRenderers.toLegacy(value, selected))
             }
         } catch (ignored: RuntimeException) {
