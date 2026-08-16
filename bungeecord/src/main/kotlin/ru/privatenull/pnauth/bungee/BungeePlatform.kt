@@ -11,10 +11,10 @@ import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.display.PlayerDisplay
 import ru.privatenull.pnauth.message.MessageFormat
 import ru.privatenull.pnauth.platform.DefaultTaskRegistry
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.PlatformScheduler
 import ru.privatenull.pnauth.platform.PlatformType
-import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.platform.PnPlayer
+import ru.privatenull.pnauth.platform.Player
 import ru.privatenull.pnauth.platform.TaskHandle
 import ru.privatenull.pnauth.platform.TaskRegistry
 import java.net.InetSocketAddress
@@ -30,28 +30,28 @@ class BungeePlatform(
     private val display: PlayerDisplay,
     private val messageFormat: MessageFormat,
     private val dialogs: PlayerDialogs
-) : PnPlatform {
+) : Platform {
 
     private val proxy: ProxyServer = plugin.proxy
     private val scheduler: PlatformScheduler = BungeeScheduler(plugin)
     private val tasks: TaskRegistry = DefaultTaskRegistry(scheduler)
 
     override fun type(): PlatformType = PlatformType.BUNGEECORD
-    override fun player(uniqueId: UUID): Optional<PnPlayer> = wrap(proxy.getPlayer(uniqueId))
-    override fun player(username: String): Optional<PnPlayer> = wrap(proxy.getPlayer(username))
+    override fun player(uniqueId: UUID): Optional<Player> = wrap(proxy.getPlayer(uniqueId))
+    override fun player(username: String): Optional<Player> = wrap(proxy.getPlayer(username))
     override fun scheduler(): PlatformScheduler = scheduler
     override fun tasks(): TaskRegistry = tasks
     override fun dialogs(): PlayerDialogs = dialogs
 
-    override fun players(): Collection<PnPlayer> {
-        return proxy.players.map { Player(it) }
+    override fun players(): Collection<Player> {
+        return proxy.players.map { BungeePlayer(it) }
     }
 
-    private fun wrap(player: ProxiedPlayer?): Optional<PnPlayer> {
-        return Optional.ofNullable(player).map { Player(it) }
+    private fun wrap(player: ProxiedPlayer?): Optional<Player> {
+        return Optional.ofNullable(player).map { BungeePlayer(it) }
     }
 
-    private inner class Player(private val delegate: ProxiedPlayer) : PnPlayer {
+    private inner class BungeePlayer(private val delegate: ProxiedPlayer) : Player {
         override fun uniqueId(): UUID = delegate.uniqueId
         override fun username(): String = delegate.name
         override fun remoteAddress(): InetSocketAddress = delegate.address ?: InetSocketAddress("127.0.0.1", 0)
@@ -85,9 +85,9 @@ class BungeePlatform(
 
     private class BungeeScheduler(private val plugin: Plugin) : PlatformScheduler {
         override fun execute(task: Runnable): TaskHandle = delayed(Duration.ZERO, task)
-        override fun execute(player: PnPlayer, task: Runnable): TaskHandle = execute(task)
-        override fun delayed(player: PnPlayer, delay: Duration, task: Runnable): TaskHandle = delayed(delay, task)
-        override fun repeating(player: PnPlayer, initialDelay: Duration, interval: Duration, task: Runnable): TaskHandle {
+        override fun execute(player: Player, task: Runnable): TaskHandle = execute(task)
+        override fun delayed(player: Player, delay: Duration, task: Runnable): TaskHandle = delayed(delay, task)
+        override fun repeating(player: Player, initialDelay: Duration, interval: Duration, task: Runnable): TaskHandle {
             return repeating(initialDelay, interval, task)
         }
 

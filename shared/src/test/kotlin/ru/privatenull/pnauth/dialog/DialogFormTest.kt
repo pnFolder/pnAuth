@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import ru.privatenull.pnauth.platform.PnPlayer
-import java.lang.reflect.Proxy
+import ru.privatenull.pnauth.platform.Player
+import java.lang.reflect.Proxy as JavaProxy
 import java.util.Optional
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -57,10 +57,10 @@ class DialogFormTest {
             return (type.actions[0].action as DialogAction.DynamicCustom).id
         }
 
-        private fun player(): PnPlayer {
-            return Proxy.newProxyInstance(
-                PnPlayer::class.java.classLoader,
-                arrayOf(PnPlayer::class.java)
+        private fun player(): Player {
+            return JavaProxy.newProxyInstance(
+                Player::class.java.classLoader,
+                arrayOf(Player::class.java)
             ) { _, method, _ ->
                 when (method.name) {
                     "uniqueId" -> UUID.randomUUID()
@@ -70,7 +70,7 @@ class DialogFormTest {
                     "currentServer" -> Optional.empty<String>()
                     else -> null
                 }
-            } as PnPlayer
+            } as Player
         }
     }
 
@@ -78,8 +78,8 @@ class DialogFormTest {
         var dialog: PlayerDialog? = null
         val handle: FakeHandle = FakeHandle()
 
-        override fun supported(player: PnPlayer): Boolean = true
-        override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
+        override fun supported(player: Player): Boolean = true
+        override fun show(player: Player, dialog: PlayerDialog): DialogHandle {
             this.dialog = dialog
             return handle
         }

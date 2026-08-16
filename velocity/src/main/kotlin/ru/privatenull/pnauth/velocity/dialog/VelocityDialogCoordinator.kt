@@ -18,8 +18,8 @@ import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.message.AuthMessages
 import ru.privatenull.pnauth.message.MessageFormat
-import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.platform.PnPlayer
+import ru.privatenull.pnauth.platform.Platform
+import ru.privatenull.pnauth.platform.Player as PnAuthPlayer
 import ru.privatenull.pnauth.security.ClickCaptchaService
 import ru.privatenull.pnauth.velocity.VelocityMessages
 import java.util.UUID
@@ -34,7 +34,7 @@ class VelocityDialogCoordinator(
     private val format: MessageFormat,
     private val maxPasswordLength: Int,
     private val proxySettings: ProxySettings,
-    private val platform: PnPlatform
+    private val platform: Platform
 ) : AutoCloseable {
 
     private val dialogs: PlayerDialogs = platform.dialogs()

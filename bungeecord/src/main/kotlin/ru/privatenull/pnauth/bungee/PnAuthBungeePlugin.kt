@@ -3,13 +3,14 @@ package ru.privatenull.pnauth.bungee
 import com.github.retrooper.packetevents.PacketEvents
 import net.md_5.bungee.api.plugin.Plugin
 import ru.privatenull.pnauth.api.AuthApi
+import ru.privatenull.pnauth.bungee.proxy.BungeeProxyAdapter
 import ru.privatenull.pnauth.command.CommandRegistry
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
-import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
@@ -27,6 +28,7 @@ class PnAuthBungeePlugin : Plugin() {
     private var playerDisplay: BungeePlayerDisplay? = null
     private var playerDialogs: PacketEventsPlayerDialogs? = null
     private var platform: BungeePlatform? = null
+    private var proxyAdapter: BungeeProxyAdapter? = null
     private var dependencyReady: Boolean = false
 
     override fun onLoad() {
@@ -69,15 +71,19 @@ class PnAuthBungeePlugin : Plugin() {
             val bPlatform = BungeePlatform(this, display, config.messageFormat, dialogs)
             platform = bPlatform
 
+            val proxyFacade = BungeeProxyAdapter(this, proxy, bPlatform)
+            proxyAdapter = proxyFacade
+
             var actions: BungeeAuthActions? = null
 
-            // Fluent bootstrap using standardized PlatformAdapters
+            // Fluent bootstrap using standardized PlatformAdapters and BungeeProxyAdapter
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataFolder)
                 .logger(PlatformLoggerAdapter.of { message -> logger.info(message) })
                 .platform(bPlatform)
                 .display(display)
                 .dialogs(dialogs)
+                .proxy(proxyFacade)
                 .authBridge(object : PlatformAuthBridgeAdapter {
                     override fun authenticated(uniqueId: UUID) { actions?.authenticated(uniqueId) }
                     override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { actions?.authenticated(uniqueId, isRegistration) }
@@ -121,7 +127,7 @@ class PnAuthBungeePlugin : Plugin() {
         pluginManager.registerListener(this, listener)
         pluginManager.registerListener(this, dialogListener)
         pluginManager.registerListener(this, authTasks)
-        logger.info("pnAuth enabled for BungeeCord via PlatformAdapter architecture.")
+        logger.info("pnAuth enabled for BungeeCord via BungeeProxyAdapter architecture.")
     }
 
     override fun onDisable() {
@@ -146,7 +152,9 @@ class PnAuthBungeePlugin : Plugin() {
 
     fun getKernel(): ExtensionKernel? = bootstrap?.authService
 
-    fun getPlatform(): PnPlatform? = platform
+    fun getPlatform(): Platform? = platform
+
+    fun getProxyAdapter(): BungeeProxyAdapter? = proxyAdapter
 
     private fun dependencyRestartNotice() {
         logger.warning("============================================================")

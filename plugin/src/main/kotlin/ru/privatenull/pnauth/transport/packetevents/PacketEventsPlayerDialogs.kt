@@ -32,8 +32,8 @@ import ru.privatenull.pnauth.dialog.DialogSubscription
 import ru.privatenull.pnauth.dialog.DialogType
 import ru.privatenull.pnauth.dialog.PlayerDialog
 import ru.privatenull.pnauth.dialog.PlayerDialogs
+import ru.privatenull.pnauth.platform.Player
 import ru.privatenull.pnauth.platform.PlayerResourceKey
-import ru.privatenull.pnauth.platform.PnPlayer
 import java.util.Optional
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -98,7 +98,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
         }
     }
 
-    override fun supported(player: PnPlayer): Boolean {
+    override fun supported(player: Player): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId())
         if (nativeValue == null) return false
         val ver = packets.playerManager.getClientVersion(nativeValue)
@@ -108,7 +108,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             || ver.isNewerThanOrEquals(ClientVersion.V_1_21_6)
     }
 
-    override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
+    override fun show(player: Player, dialog: PlayerDialog): DialogHandle {
         if (!supported(player)) throw UnsupportedOperationException("Native dialogs require client 1.21.4+")
         val key = PlayerResourceKey(player.uniqueId(), dialog.id)
         return handles.compute(key) { _, current ->

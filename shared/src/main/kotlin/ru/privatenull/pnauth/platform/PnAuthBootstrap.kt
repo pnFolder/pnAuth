@@ -1,7 +1,6 @@
 package ru.privatenull.pnauth.platform
 
 import ru.privatenull.pnauth.command.AuthCommandService
-import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.flow.AuthLifecycleCoordinator
@@ -26,7 +25,7 @@ import java.nio.file.Path
 
 /**
  * Fluent bootstrap builder and service registry container for initializing pnAuth
- * consistently using standardized PlatformAdapters across BungeeCord, Velocity, Paper, and Folia.
+ * consistently using clean Platform adapters across BungeeCord, Velocity, Paper, and Folia.
  */
 class PnAuthBootstrap private constructor(
     val dataFolder: Path,
@@ -42,13 +41,17 @@ class PnAuthBootstrap private constructor(
     val commandService: AuthCommandService,
     val accessService: AuthAccessService,
     val lifecycleCoordinator: AuthLifecycleCoordinator,
-    val platform: PnPlatform?
+    val platform: Platform?,
+    val proxy: Proxy?
 ) : AutoCloseable {
 
     override fun close() {
+        limbo?.let { server ->
+            proxy?.unregisterServerRoute(config.limbo.serverName)
+            server.close()
+        }
         authService.close()
         migration.close()
-        limbo?.close()
     }
 
     companion object {
@@ -59,11 +62,12 @@ class PnAuthBootstrap private constructor(
     class Builder {
         private var folder: Path? = null
         private var platformLoggerAdapter: PlatformLoggerAdapter? = null
-        private var platformAdapter: PnPlatform? = null
+        private var platformAdapter: Platform? = null
         private var displayAdapter: PlatformDisplayAdapter? = null
         private var dialogAdapter: PlatformDialogAdapter? = null
         private var bridgeAdapter: PlatformAuthBridgeAdapter? = null
         private var limboAdapter: PlatformLimboAdapter? = null
+        private var proxyAdapter: Proxy? = null
         private val limboProviders: MutableList<LimboServerProvider> = mutableListOf(PicoLimboProvider())
 
         fun dataFolder(path: Path): Builder {
@@ -81,7 +85,7 @@ class PnAuthBootstrap private constructor(
             return this
         }
 
-        fun platform(platform: PnPlatform): Builder {
+        fun platform(platform: Platform): Builder {
             this.platformAdapter = platform
             return this
         }
@@ -103,6 +107,11 @@ class PnAuthBootstrap private constructor(
 
         fun limbo(limbo: PlatformLimboAdapter): Builder {
             this.limboAdapter = limbo
+            return this
+        }
+
+        fun proxy(proxy: Proxy): Builder {
+            this.proxyAdapter = proxy
             return this
         }
 
@@ -136,8 +145,14 @@ class PnAuthBootstrap private constructor(
                     val created = limboRegistry.create(config.limbo.provider, LimboServerContext(dataFolder, config.limbo))
                     created.start()
                     limboServer = created
-                    limboAdapter?.registerRoute(config.limbo.serverName, created.host(), created.port())
+
+                    val routeRegistered = proxyAdapter?.registerServerRoute(config.limbo.serverName, created.host(), created.port()) ?: false
+                    if (!routeRegistered) {
+                        limboAdapter?.registerRoute(config.limbo.serverName, created.host(), created.port())
+                    }
+
                     proxySettings = proxySettings.requiringServerAuth()
+                    logger.info("PicoLimbo embedded server route '${config.limbo.serverName}' active at ${created.host()}:${created.port()}.")
                 } catch (exception: Exception) {
                     limboServer?.close()
                     throw IllegalStateException("Embedded PicoLimbo is enabled but could not be started", exception)
@@ -170,12 +185,12 @@ class PnAuthBootstrap private constructor(
             val accessService = AuthAccessService(authService, proxySettings, config.access, messages)
             val lifecycleCoordinator = AuthLifecycleCoordinator(authService, accessService)
 
-            logger.info("pnAuth core services initialized successfully via PlatformAdapter architecture.")
+            logger.info("pnAuth core services initialized successfully.")
 
             return PnAuthBootstrap(
                 dataFolder, logger, config, proxySettings, limboServer,
                 repository, authService, messages, bridge, migration,
-                commandService, accessService, lifecycleCoordinator, platformAdapter
+                commandService, accessService, lifecycleCoordinator, platformAdapter, proxyAdapter
             )
         }
     }

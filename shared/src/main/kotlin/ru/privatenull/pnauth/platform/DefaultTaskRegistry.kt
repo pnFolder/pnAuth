@@ -18,7 +18,7 @@ class DefaultTaskRegistry(
         return replace(Key(owner, id, null), scheduler.delayed(delay, task))
     }
 
-    override fun delayed(owner: String, id: String, player: PnPlayer, delay: Duration, task: Runnable): TaskHandle {
+    override fun delayed(owner: String, id: String, player: Player, delay: Duration, task: Runnable): TaskHandle {
         return replace(Key(owner, id, player.uniqueId()), scheduler.delayed(player, delay, task))
     }
 
@@ -29,7 +29,7 @@ class DefaultTaskRegistry(
     override fun repeating(
         owner: String,
         id: String,
-        player: PnPlayer,
+        player: Player,
         delay: Duration,
         interval: Duration,
         task: Runnable

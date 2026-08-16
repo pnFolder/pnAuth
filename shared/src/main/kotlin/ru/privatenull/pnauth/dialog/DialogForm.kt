@@ -1,7 +1,7 @@
 package ru.privatenull.pnauth.dialog
 
 import net.kyori.adventure.text.Component
-import ru.privatenull.pnauth.platform.PnPlayer
+import ru.privatenull.pnauth.platform.Player
 import java.util.UUID
 import java.util.function.Consumer
 
@@ -18,7 +18,7 @@ class DialogForm private constructor(builder: Builder) {
     val columns: Int = builder.columns
     val closeHandler: Consumer<DialogResponse>? = builder.closeHandler
 
-    internal fun show(dialogs: PlayerDialogs, player: PnPlayer): DialogHandle {
+    internal fun show(dialogs: PlayerDialogs, player: Player): DialogHandle {
         val token = UUID.randomUUID().toString().replace("-", "")
         val handlers = LinkedHashMap<String, Consumer<DialogResponse>>()
         val materialized = ArrayList<DialogButton>(buttons.size)

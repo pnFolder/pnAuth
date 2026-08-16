@@ -45,7 +45,7 @@ import ru.privatenull.pnauth.extension.DefaultAuthExtensionRegistry
 import ru.privatenull.pnauth.extension.VerificationTicket
 import ru.privatenull.pnauth.kernel.service.DefaultServiceRegistry
 import ru.privatenull.pnauth.kernel.service.ServiceRegistry
-import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.UnavailablePlatform
 import ru.privatenull.pnauth.security.IpBanStore
 import ru.privatenull.pnauth.security.PasswordHasher
@@ -94,7 +94,7 @@ class AuthService internal constructor(
     @Volatile
     private var display: PlayerDisplay = NoopPlayerDisplay()
     @Volatile
-    private var platform: PnPlatform = UnavailablePlatform()
+    private var platform: Platform = UnavailablePlatform()
     private val verificationDisplays: ConcurrentMap<String, List<DisplayHandle>> = ConcurrentHashMap()
     private val services: ServiceRegistry = DefaultServiceRegistry()
 
@@ -709,10 +709,10 @@ class AuthService internal constructor(
         this.display = Objects.requireNonNull(display, "display")
     }
 
-    override fun platform(): PnPlatform = platform
+    override fun platform(): Platform = platform
 
     /** Installs the player facade supplied by the active server adapter. */
-    fun installPlatform(platform: PnPlatform) {
+    fun installPlatform(platform: Platform) {
         this.platform = Objects.requireNonNull(platform, "platform")
     }
 

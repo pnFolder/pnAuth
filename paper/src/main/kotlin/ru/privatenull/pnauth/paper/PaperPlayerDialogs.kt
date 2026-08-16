@@ -18,8 +18,8 @@ import ru.privatenull.pnauth.dialog.DialogSubscription
 import ru.privatenull.pnauth.dialog.DialogType
 import ru.privatenull.pnauth.dialog.PlayerDialog
 import ru.privatenull.pnauth.dialog.PlayerDialogs
+import ru.privatenull.pnauth.platform.Player
 import ru.privatenull.pnauth.platform.PlayerResourceKey
-import ru.privatenull.pnauth.platform.PnPlayer
 import java.util.ArrayList
 import java.util.LinkedHashMap
 import java.util.Locale
@@ -44,11 +44,11 @@ class PaperPlayerDialogs(private val plugin: Plugin) : PlayerDialogs, AutoClosea
         if (nativeDialogsAvailable) registerResponseListener()
     }
 
-    override fun supported(player: PnPlayer): Boolean {
+    override fun supported(player: Player): Boolean {
         return nativeDialogsAvailable && player.connected()
     }
 
-    override fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle {
+    override fun show(player: Player, dialog: PlayerDialog): DialogHandle {
         if (!supported(player)) {
             throw UnsupportedOperationException("Native dialogs with responses require Paper 1.21.7 or newer")
         }

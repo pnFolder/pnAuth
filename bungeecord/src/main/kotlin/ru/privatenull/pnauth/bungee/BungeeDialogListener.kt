@@ -23,7 +23,7 @@ import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.message.AuthMessages
-import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.security.ClickCaptchaService
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -38,7 +38,7 @@ class BungeeDialogListener internal constructor(
     private val settings: FeatureSettings,
     private val maxPasswordLength: Int,
     private val proxySettings: ProxySettings,
-    private val platform: PnPlatform,
+    private val platform: Platform,
     @Suppress("UNUSED_PARAMETER") commandRegistry: ru.privatenull.pnauth.command.CommandRegistry
 ) : Listener {
 

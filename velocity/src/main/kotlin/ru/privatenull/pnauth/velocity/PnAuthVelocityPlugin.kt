@@ -18,11 +18,12 @@ import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
-import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator
+import ru.privatenull.pnauth.velocity.proxy.VelocityProxyAdapter
 import java.nio.file.Path
 import java.util.UUID
 import java.util.function.Function
@@ -47,6 +48,7 @@ class PnAuthVelocityPlugin @Inject constructor(
     private var playerDisplay: VelocityPlayerDisplay? = null
     private var playerDialogs: PacketEventsPlayerDialogs? = null
     private var platform: VelocityPlatform? = null
+    private var proxyAdapter: VelocityProxyAdapter? = null
 
     @Subscribe
     fun onProxyInitialization(event: ProxyInitializeEvent) {
@@ -76,15 +78,19 @@ class PnAuthVelocityPlugin @Inject constructor(
             val pForm = VelocityPlatform(this, proxy, display, config.messageFormat, pDialogs)
             platform = pForm
 
+            val proxyFacade = VelocityProxyAdapter(this, proxy, logger, pForm)
+            proxyAdapter = proxyFacade
+
             var vActions: VelocityAuthActions? = null
 
-            // Fluent bootstrap using standardized PlatformAdapters
+            // Fluent bootstrap using standardized PlatformAdapters and VelocityProxyAdapter
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataDirectory)
                 .logger(PlatformLoggerAdapter.of { message -> logger.info(message) })
                 .platform(pForm)
                 .display(display)
                 .dialogs(pDialogs)
+                .proxy(proxyFacade)
                 .authBridge(object : PlatformAuthBridgeAdapter {
                     override fun authenticated(uniqueId: UUID) { vActions?.authenticated(uniqueId) }
                     override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { vActions?.authenticated(uniqueId, isRegistration) }
@@ -127,7 +133,7 @@ class PnAuthVelocityPlugin @Inject constructor(
             throw IllegalStateException("pnAuth could not be initialized", exception)
         }
 
-        logger.info("pnAuth enabled for Velocity via PlatformAdapter architecture.")
+        logger.info("pnAuth enabled for Velocity via VelocityProxyAdapter architecture.")
     }
 
     @Subscribe
@@ -150,7 +156,9 @@ class PnAuthVelocityPlugin @Inject constructor(
 
     fun getKernel(): ExtensionKernel? = bootstrap?.authService
 
-    fun getPlatform(): PnPlatform? = platform
+    fun getPlatform(): Platform? = platform
+
+    fun getProxyAdapter(): VelocityProxyAdapter? = proxyAdapter
 
     private fun dependencyRestartNotice() {
         logger.warn("============================================================")

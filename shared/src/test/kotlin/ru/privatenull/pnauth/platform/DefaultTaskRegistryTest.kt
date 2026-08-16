@@ -41,11 +41,11 @@ class DefaultTaskRegistryTest {
 
     private class FakeScheduler : PlatformScheduler {
         override fun execute(task: Runnable): TaskHandle = handle()
-        override fun execute(player: PnPlayer, task: Runnable): TaskHandle = handle()
+        override fun execute(player: Player, task: Runnable): TaskHandle = handle()
         override fun delayed(delay: Duration, task: Runnable): TaskHandle = handle()
-        override fun delayed(player: PnPlayer, delay: Duration, task: Runnable): TaskHandle = handle()
+        override fun delayed(player: Player, delay: Duration, task: Runnable): TaskHandle = handle()
         override fun repeating(delay: Duration, interval: Duration, task: Runnable): TaskHandle = handle()
-        override fun repeating(player: PnPlayer, delay: Duration, interval: Duration, task: Runnable): TaskHandle = handle()
+        override fun repeating(player: Player, delay: Duration, interval: Duration, task: Runnable): TaskHandle = handle()
 
         private fun handle(): TaskHandle {
             return object : TaskHandle {

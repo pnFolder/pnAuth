@@ -7,12 +7,12 @@ import java.util.UUID
 /** Named task directory. Replacing a task atomically cancels its previous instance. */
 interface TaskRegistry {
     fun delayed(owner: String, taskId: String, delay: Duration, task: Runnable): TaskHandle
-    fun delayed(owner: String, taskId: String, player: PnPlayer, delay: Duration, task: Runnable): TaskHandle
+    fun delayed(owner: String, taskId: String, player: Player, delay: Duration, task: Runnable): TaskHandle
     fun repeating(owner: String, taskId: String, initialDelay: Duration, interval: Duration, task: Runnable): TaskHandle
     fun repeating(
         owner: String,
         taskId: String,
-        player: PnPlayer,
+        player: Player,
         initialDelay: Duration,
         interval: Duration,
         task: Runnable

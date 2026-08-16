@@ -15,8 +15,8 @@ import ru.privatenull.pnauth.config.FeatureSettings
 import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.message.AuthMessages
-import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.platform.PnPlayer
+import ru.privatenull.pnauth.platform.Platform
+import ru.privatenull.pnauth.platform.Player
 import ru.privatenull.pnauth.security.ClickCaptchaService
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -35,7 +35,7 @@ class AuthUiCoordinator(
     private val features: FeatureSettings,
     private val maxPasswordLength: Int,
     private val authServer: String,
-    private val platform: PnPlatform,
+    private val platform: Platform,
     private val renderer: AuthUiRenderer,
     commandRegistry: CommandRegistry,
     private val diagnostics: Consumer<String>
@@ -145,7 +145,7 @@ class AuthUiCoordinator(
         }
     }
 
-    private fun open(player: PnPlayer, status: AuthStatus, notice: Component?, session: Session) {
+    private fun open(player: Player, status: AuthStatus, notice: Component?, session: Session) {
         val register = status == AuthStatus.UNREGISTERED
         val command = if (register) "register" else "login"
         val content = AuthDialogFormFactory.Content(
@@ -313,7 +313,7 @@ class AuthUiCoordinator(
         )
     }
 
-    private fun sendCaptcha(player: PnPlayer) {
+    private fun sendCaptcha(player: Player) {
         val challenge = captcha.issue(player.uniqueId())
         player.sendMessage(renderer.render("captcha.prompt", mapOf("answer" to challenge.answer)))
         var options = Component.empty()
@@ -333,8 +333,8 @@ class AuthUiCoordinator(
                 && !auth.isAuthenticated(playerId) && passwordStage(auth.status(playerId))
     }
 
-    private fun player(playerId: UUID): PnPlayer? = platform.player(playerId).orElse(null)
-    private fun onAuthServer(player: PnPlayer): Boolean {
+    private fun player(playerId: UUID): Player? = platform.player(playerId).orElse(null)
+    private fun onAuthServer(player: Player): Boolean {
         return player.connected() && player.currentServer()
             .map { server -> server.equals(authServer, ignoreCase = true) }.orElse(false)
     }

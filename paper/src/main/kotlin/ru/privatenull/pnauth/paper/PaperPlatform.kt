@@ -1,15 +1,15 @@
 package ru.privatenull.pnauth.paper
 
 import org.bukkit.Bukkit
-import org.bukkit.entity.Player
+import org.bukkit.entity.Player as BukkitPlayer
 import org.bukkit.plugin.Plugin
 import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.display.PlayerDisplay
 import ru.privatenull.pnauth.platform.DefaultTaskRegistry
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.PlatformScheduler
 import ru.privatenull.pnauth.platform.PlatformType
-import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.platform.PnPlayer
+import ru.privatenull.pnauth.platform.Player as PnAuthPlayer
 import ru.privatenull.pnauth.platform.TaskHandle
 import ru.privatenull.pnauth.platform.TaskRegistry
 import java.net.InetSocketAddress
@@ -23,7 +23,7 @@ class PaperPlatform(
     private val plugin: Plugin,
     private val display: PlayerDisplay,
     private val dialogs: PlayerDialogs
-) : PnPlatform {
+) : Platform {
 
     private val platformScheduler: PlatformScheduler = Scheduler()
     private val taskRegistry: TaskRegistry = DefaultTaskRegistry(platformScheduler)
@@ -34,21 +34,21 @@ class PaperPlatform(
     }
 
     override fun type(): PlatformType = platformType
-    override fun player(uniqueId: UUID): Optional<PnPlayer> = wrap(Bukkit.getPlayer(uniqueId))
-    override fun player(username: String): Optional<PnPlayer> = wrap(Bukkit.getPlayerExact(username))
+    override fun player(uniqueId: UUID): Optional<PnAuthPlayer> = wrap(Bukkit.getPlayer(uniqueId))
+    override fun player(username: String): Optional<PnAuthPlayer> = wrap(Bukkit.getPlayerExact(username))
     override fun scheduler(): PlatformScheduler = platformScheduler
     override fun tasks(): TaskRegistry = taskRegistry
     override fun dialogs(): PlayerDialogs = dialogs
 
-    override fun players(): Collection<PnPlayer> {
+    override fun players(): Collection<PnAuthPlayer> {
         return Bukkit.getOnlinePlayers().map { Wrapper(it) }
     }
 
-    private fun wrap(player: Player?): Optional<PnPlayer> {
+    private fun wrap(player: BukkitPlayer?): Optional<PnAuthPlayer> {
         return Optional.ofNullable(player).map { Wrapper(it) }
     }
 
-    private inner class Wrapper(private val delegate: Player) : PnPlayer {
+    private inner class Wrapper(private val delegate: BukkitPlayer) : PnAuthPlayer {
         override fun uniqueId(): UUID = delegate.uniqueId
         override fun username(): String = delegate.name
         override fun remoteAddress(): InetSocketAddress = delegate.address ?: InetSocketAddress("127.0.0.1", 0)
@@ -70,7 +70,7 @@ class PaperPlatform(
 
     private inner class Scheduler : PlatformScheduler {
         override fun execute(task: Runnable): TaskHandle = delayed(Duration.ZERO, task)
-        override fun execute(player: PnPlayer, task: Runnable): TaskHandle = delayed(player, Duration.ZERO, task)
+        override fun execute(player: PnAuthPlayer, task: Runnable): TaskHandle = delayed(player, Duration.ZERO, task)
 
         override fun delayed(delay: Duration, task: Runnable): TaskHandle {
             val scheduled = Bukkit.getGlobalRegionScheduler().runDelayed(
@@ -79,7 +79,7 @@ class PaperPlatform(
             return handle { scheduled.cancel() }
         }
 
-        override fun delayed(player: PnPlayer, delay: Duration, task: Runnable): TaskHandle {
+        override fun delayed(player: PnAuthPlayer, delay: Duration, task: Runnable): TaskHandle {
             val delegate = Bukkit.getPlayer(player.uniqueId()) ?: return handle {}
             val scheduled = delegate.scheduler.runDelayed(
                 plugin, { task.run() }, null, ticks(delay)
@@ -94,7 +94,7 @@ class PaperPlatform(
             return handle { scheduled.cancel() }
         }
 
-        override fun repeating(player: PnPlayer, initialDelay: Duration, interval: Duration, task: Runnable): TaskHandle {
+        override fun repeating(player: PnAuthPlayer, initialDelay: Duration, interval: Duration, task: Runnable): TaskHandle {
             val delegate = Bukkit.getPlayer(player.uniqueId()) ?: return handle {}
             val scheduled = delegate.scheduler.runAtFixedRate(
                 plugin, { task.run() }, null, ticks(initialDelay), ticks(interval)

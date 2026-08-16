@@ -7,13 +7,13 @@ import java.net.InetSocketAddress
 import java.util.Optional
 import java.util.UUID
 
-/** Stable player facade which never exposes a Bungee, Velocity, or Bukkit type. */
-interface PnPlayer {
+/** Clean platform-neutral Player abstraction interface. */
+interface Player {
     fun uniqueId(): UUID
     fun username(): String
     fun remoteAddress(): InetSocketAddress
-    fun currentServer(): Optional<String>
     fun connected(): Boolean
+    fun currentServer(): Optional<String>
     fun hasPermission(permission: String): Boolean
     fun sendMessage(message: String)
     fun sendMessage(message: Component)
@@ -22,9 +22,4 @@ interface PnPlayer {
     fun display(): PlayerDisplay
     fun dialogs(): PlayerDialogs
     fun scheduler(): PlatformScheduler
-
-    fun ipAddress(): String {
-        val address = remoteAddress().address
-        return address?.hostAddress ?: remoteAddress().hostString
-    }
 }

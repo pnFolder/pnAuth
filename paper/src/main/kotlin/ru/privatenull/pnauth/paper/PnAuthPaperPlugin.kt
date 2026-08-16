@@ -13,7 +13,7 @@ import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.PaperSettings
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.message.AuthMessages
-import ru.privatenull.pnauth.platform.PnPlatform
+import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.security.TotpKeyStore
 import ru.privatenull.pnauth.security.TotpService
 import ru.privatenull.pnauth.service.AuthService
@@ -107,7 +107,7 @@ class PnAuthPaperPlugin : JavaPlugin(), Listener {
     fun getKernel(): ExtensionKernel? = auth
 
     /** Returns the platform-neutral player API. */
-    fun getPlatform(): PnPlatform? = platform
+    fun getPlatform(): Platform? = platform
 
     private fun tryTeleport(player: Player) {
         val settings = paperSettings

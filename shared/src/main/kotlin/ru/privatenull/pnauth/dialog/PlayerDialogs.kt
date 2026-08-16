@@ -1,16 +1,16 @@
 package ru.privatenull.pnauth.dialog
 
-import ru.privatenull.pnauth.platform.PnPlayer
+import ru.privatenull.pnauth.platform.Player
 import java.util.Optional
 import java.util.UUID
 
 /** Creates and manages dialogs independently from an authentication flow. */
 interface PlayerDialogs {
-    fun supported(player: PnPlayer): Boolean
-    fun show(player: PnPlayer, dialog: PlayerDialog): DialogHandle
+    fun supported(player: Player): Boolean
+    fun show(player: Player, dialog: PlayerDialog): DialogHandle
 
     /** Opens a high-level form whose button action identifiers are generated and routed internally. */
-    fun show(player: PnPlayer, form: DialogForm): DialogHandle {
+    fun show(player: Player, form: DialogForm): DialogHandle {
         return form.show(this, player)
     }
 
