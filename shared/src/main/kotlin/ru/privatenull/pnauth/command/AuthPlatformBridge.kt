@@ -5,6 +5,10 @@ import java.util.UUID
 interface AuthPlatformBridge {
     fun authenticated(uniqueId: UUID)
 
+    fun authenticated(uniqueId: UUID, isRegistration: Boolean) {
+        authenticated(uniqueId)
+    }
+
     fun loggedOut(uniqueId: UUID)
 
     fun accountDeleted(uniqueId: UUID)

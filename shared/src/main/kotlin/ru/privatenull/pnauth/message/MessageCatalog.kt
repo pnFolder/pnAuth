@@ -75,6 +75,10 @@ object MessageCatalog {
             "&7Click to reopen the dialog", "&8[&d&lpnAuth&8] &aYou have successfully logged in. Welcome!"
         )
         values["broadcast.message"] = "&8[&d&lAnnouncement&8] &f{message}"
+        values["title.login.success"] = "<gradient:#55FF55:#00AA00><bold>WELCOME BACK</bold></gradient>"
+        values["subtitle.login.success"] = "<gradient:#AAFFAA:#FFFFFF>Successfully authenticated!</gradient>"
+        values["title.register.success"] = "<gradient:#55FFFF:#00AAFF><bold>REGISTRATION SUCCESS</bold></gradient>"
+        values["subtitle.register.success"] = "<gradient:#AAFFFF:#FFFFFF>Welcome to the server!</gradient>"
         return values
     }
 
@@ -145,6 +149,10 @@ object MessageCatalog {
             "&7Нажмите, чтобы снова открыть окно", "&8[&d&lpnAuth&8] &aВы успешно авторизовались. Добро пожаловать!"
         )
         values["broadcast.message"] = "&8[&d&lОбъявление&8] &f{message}"
+        values["title.login.success"] = "<gradient:#55FF55:#00AA00><bold>УСПЕШНЫЙ ВХОД</bold></gradient>"
+        values["subtitle.login.success"] = "<gradient:#AAFFAA:#FFFFFF>Вы успешно авторизовались!</gradient>"
+        values["title.register.success"] = "<gradient:#55FFFF:#00AAFF><bold>РЕГИСТРАЦИЯ ЗАВЕРШЕНА</bold></gradient>"
+        values["subtitle.register.success"] = "<gradient:#AAFFFF:#FFFFFF>Вы успешно зарегистрировались!</gradient>"
         return values
     }
 

@@ -16,16 +16,43 @@ internal class VelocityAuthActions(
 ) : AuthPlatformBridge {
 
     override fun authenticated(uniqueId: UUID) {
+        authenticated(uniqueId, false)
+    }
+
+    override fun authenticated(uniqueId: UUID, isRegistration: Boolean) {
         val player = proxy.getPlayer(uniqueId).orElse(null)
-        authenticated(player)
+        authenticated(player, isRegistration)
     }
 
     override fun authenticated(username: String) {
-        authenticated(proxy.getPlayer(username).orElse(null))
+        authenticated(proxy.getPlayer(username).orElse(null), false)
     }
 
-    private fun authenticated(player: Player?) {
+    private fun authenticated(player: Player?, isRegistration: Boolean = false) {
         if (player == null) return
+
+        // Display success Title & Subtitle with gradient
+        val titleKey = if (isRegistration) "title.register.success" else "title.login.success"
+        val subtitleKey = if (isRegistration) "subtitle.register.success" else "subtitle.login.success"
+        val titleComp = VelocityMessages.component(messages.text(titleKey), messageFormat)
+        val subtitleComp = VelocityMessages.component(messages.text(subtitleKey), messageFormat)
+        val titleObj = net.kyori.adventure.title.Title.title(
+            titleComp,
+            subtitleComp,
+            net.kyori.adventure.title.Title.Times.times(
+                java.time.Duration.ofMillis(500),
+                java.time.Duration.ofMillis(2000),
+                java.time.Duration.ofMillis(500)
+            )
+        )
+        player.showTitle(titleObj)
+
+        if (ru.privatenull.pnauth.dev.DevFlags.STAY_ON_AUTH_SERVER) {
+            org.slf4j.LoggerFactory.getLogger("pnAuth")
+                .info("[pnAuth-Dev] Player {} authenticated (Dev Mode STAY_ON_AUTH_SERVER active). Remaining on auth server.", player.username)
+            return
+        }
+
         if (!settings.hasBackendServer()) return
         if (player.currentServer.isEmpty) return
         val serverName = player.virtualHost

@@ -4,8 +4,10 @@ import com.github.retrooper.packetevents.PacketEvents
 import com.github.retrooper.packetevents.event.PacketListenerAbstract
 import com.github.retrooper.packetevents.event.PacketListenerCommon
 import com.github.retrooper.packetevents.event.PacketReceiveEvent
+import com.github.retrooper.packetevents.event.PacketSendEvent
 import com.github.retrooper.packetevents.protocol.dialog.CommonDialogData
 import com.github.retrooper.packetevents.protocol.dialog.NoticeDialog
+import com.github.retrooper.packetevents.protocol.dialog.action.ActionTypes
 import com.github.retrooper.packetevents.protocol.dialog.body.PlainMessage
 import com.github.retrooper.packetevents.protocol.dialog.button.ActionButton
 import com.github.retrooper.packetevents.protocol.dialog.button.CommonButtonData
@@ -16,6 +18,7 @@ import com.github.retrooper.packetevents.protocol.nbt.NBTNumber
 import com.github.retrooper.packetevents.protocol.nbt.NBTString
 import com.github.retrooper.packetevents.protocol.packettype.PacketType
 import com.github.retrooper.packetevents.protocol.player.ClientVersion
+import com.github.retrooper.packetevents.wrapper.PacketWrapper
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCustomClickAction
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerClearDialog
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerShowDialog
@@ -57,6 +60,42 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             throw IllegalStateException("PacketEvents must be loaded before creating dialog transport")
         }
         listener = packets.eventManager.registerListener(ResponseListener())
+        val listener = DialogPacketDebugListener()
+
+        PacketEvents.getAPI()
+            .eventManager
+            .registerListener(listener)
+    }
+
+    class DialogPacketDebugListener : PacketListenerAbstract() {
+
+        override fun onPacketSend(event: PacketSendEvent) {
+
+//            println(
+//                "[PE-OUT] type=${event.packetType} " +
+//                        "user=${event.user.name} " +
+//                        "version=${event.user.clientVersion}"
+//            )
+
+            if (event.packetType == PacketType.Play.Server.SHOW_DIALOG) {
+
+                println("[PE-OUT] >>> SHOW_DIALOG DETECTED <<<")
+
+                try {
+                    val wrapper = WrapperPlayServerShowDialog(event)
+
+                    println("[PE-OUT] dialog=${wrapper.dialog}")
+                    println(
+                        "[PE-OUT] dialogClass=" +
+                                wrapper.dialog.javaClass.name
+                    )
+
+                } catch (t: Throwable) {
+                    println("[PE-OUT] FAILED TO READ SHOW_DIALOG")
+                    t.printStackTrace()
+                }
+            }
+        }
     }
 
     override fun supported(player: PnPlayer): Boolean {
@@ -204,7 +243,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
                     ).contents,
                     false,
                     false,
-                    com.github.retrooper.packetevents.protocol.dialog.DialogAction.NONE,
+                    com.github.retrooper.packetevents.protocol.dialog.DialogAction.CLOSE,
                     emptyList(),
                     emptyList()
                 ),
@@ -229,7 +268,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
         }
     }
 
-    private fun sendSafely(player: Any, packet: Any) {
+    private fun sendSafely(player: Any, packet: PacketWrapper<*>) {
         try {
             packets.playerManager.sendPacket(player, packet)
         } catch (exception: Throwable) {

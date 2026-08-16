@@ -16,16 +16,39 @@ internal class BungeeAuthActions(
 ) : AuthPlatformBridge {
 
     override fun authenticated(uniqueId: UUID) {
+        authenticated(uniqueId, false)
+    }
+
+    override fun authenticated(uniqueId: UUID, isRegistration: Boolean) {
         val player = proxy.getPlayer(uniqueId)
-        authenticated(player)
+        authenticated(player, isRegistration)
     }
 
     override fun authenticated(username: String) {
-        authenticated(proxy.getPlayer(username))
+        authenticated(proxy.getPlayer(username), false)
     }
 
-    private fun authenticated(player: ProxiedPlayer?) {
+    private fun authenticated(player: ProxiedPlayer?, isRegistration: Boolean = false) {
         if (player == null) return
+
+        // Display success Title & Subtitle with gradient
+        val titleKey = if (isRegistration) "title.register.success" else "title.login.success"
+        val subtitleKey = if (isRegistration) "subtitle.register.success" else "subtitle.login.success"
+        val titleComp = BungeeMessages.component(messages.text(titleKey), messages.format())
+        val subtitleComp = BungeeMessages.component(messages.text(subtitleKey), messages.format())
+        val titleObj = proxy.createTitle()
+            .title(titleComp)
+            .subTitle(subtitleComp)
+            .fadeIn(10)
+            .stay(40)
+            .fadeOut(10)
+        player.sendTitle(titleObj)
+
+        if (ru.privatenull.pnauth.dev.DevFlags.STAY_ON_AUTH_SERVER) {
+            proxy.logger.info("[pnAuth-Dev] Player ${player.name} authenticated (Dev Mode STAY_ON_AUTH_SERVER active). Remaining on auth server.")
+            return
+        }
+
         if (!settings.hasBackendServer()) return
         val target = target(player) ?: run {
             player.disconnect(BungeeMessages.component(messages.text("access.backend_missing"), messages.format()))
