@@ -3,26 +3,15 @@ package ru.privatenull.pnauth.bungee
 import com.github.retrooper.packetevents.PacketEvents
 import net.md_5.bungee.api.plugin.Plugin
 import ru.privatenull.pnauth.api.AuthApi
-import ru.privatenull.pnauth.command.AuthCommandService
+import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.command.CommandRegistry
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
 import ru.privatenull.pnauth.dialog.PlayerDialogs
-import ru.privatenull.pnauth.flow.AuthLifecycleCoordinator
 import ru.privatenull.pnauth.kernel.ExtensionKernel
-import ru.privatenull.pnauth.limbo.LimboServer
-import ru.privatenull.pnauth.limbo.LimboServerContext
-import ru.privatenull.pnauth.limbo.LimboServerRegistry
-import ru.privatenull.pnauth.limbo.PicoLimboProvider
-import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.policy.AuthAccessService
-import ru.privatenull.pnauth.security.TotpKeyStore
-import ru.privatenull.pnauth.security.TotpService
-import ru.privatenull.pnauth.service.AuthService
-import ru.privatenull.pnauth.storage.AuthMigrationService
-import ru.privatenull.pnauth.storage.JdbcAuthRepository
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import java.net.InetSocketAddress
 import java.nio.file.Path
@@ -31,13 +20,11 @@ import java.util.function.Consumer
 import java.util.function.Function
 
 class PnAuthBungeePlugin : Plugin() {
-    private var auth: AuthService? = null
+    private var bootstrap: PnAuthBootstrap? = null
     private var commandRegistrar: BungeeCommandRegistrar? = null
     private var listener: BungeeAuthListener? = null
     private var dialogListener: BungeeDialogListener? = null
     private var authTasks: BungeeAuthTasks? = null
-    private var migration: AuthMigrationService? = null
-    private var limbo: LimboServer? = null
     private var playerDisplay: BungeePlayerDisplay? = null
     private var platform: BungeePlatform? = null
     private var playerDialogs: PlayerDialogs? = null
@@ -69,84 +56,73 @@ class PnAuthBungeePlugin : Plugin() {
             val dataFolder: Path = getDataFolder().toPath()
             val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
-            var proxySettings = config.proxy
-            validateBackendTargets(proxySettings)
-            val limboRegistry = LimboServerRegistry()
-            limboRegistry.register(PicoLimboProvider())
-            limbo = limboRegistry.create(config.limbo.provider, LimboServerContext(dataFolder, config.limbo))
-            if (config.limbo.enabled) {
-                if (!config.proxy.authServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException("proxy.auth-server must equal limbo.server-name when limbo is enabled")
-                }
-                if (config.proxy.backendServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException(
-                        "servers.backend-server must differ from limbo.server-name; auth and backend cannot share a name"
-                    )
-                }
-                try {
-                    limbo?.start()
-                    val createdLimbo = limbo!!
-                    val serverName = config.limbo.serverName
-                    proxy.servers[serverName] = proxy.constructServerInfo(
-                        serverName,
-                        InetSocketAddress(createdLimbo.host(), createdLimbo.port()),
-                        "pnAuth authentication limbo", false
-                    )
-                    proxySettings = proxySettings.requiringServerAuth()
-                } catch (exception: Exception) {
-                    limbo?.close()
-                    limbo = null
-                    throw IllegalStateException(
-                        "Embedded PicoLimbo is enabled but could not be started. " +
-                                "pnAuth refuses to continue with an unsecured authentication route.", exception
-                    )
-                }
-            }
-            val repository = JdbcAuthRepository(
-                config.storage.url,
-                config.storage.username,
-                config.storage.password
-            )
-            val authService = AuthService(
-                repository, config.security, TotpService(
-                    repository, TotpKeyStore.loadOrCreate(dataFolder.resolve("totp.key"))
-                ), config.features
-            )
-            auth = authService
+            validateBackendTargets(config.proxy)
+
             val display = BungeePlayerDisplay(proxy, config.messageFormat)
             playerDisplay = display
-            authService.installDisplay(display)
+
             val dialogs = PacketEventsPlayerDialogs(
                 Function { uniqueId: UUID -> proxy.getPlayer(uniqueId) },
                 Consumer { message: String -> logger.info(message) }
             )
             playerDialogs = dialogs
+
             val bPlatform = BungeePlatform(this, display, config.messageFormat, dialogs)
             platform = bPlatform
-            authService.installPlatform(bPlatform)
-            val messages = AuthMessages.load(dataFolder.resolve("messages"), config.locale, config.messageFormat)
-            val actions = BungeeAuthActions(proxy, proxySettings, messages)
-            migration = AuthMigrationService(repository)
-            val commandService = AuthCommandService(authService, messages, actions, migration, config.features)
+
+            var actions: BungeeAuthActions? = null
+
+            // Fluent bootstrap builder
+            val boot = PnAuthBootstrap.builder()
+                .dataFolder(dataFolder)
+                .logger { message -> logger.info(message) }
+                .platform(bPlatform)
+                .display(display)
+                .authBridge(object : AuthPlatformBridge {
+                    override fun authenticated(uniqueId: UUID) { actions?.authenticated(uniqueId) }
+                    override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { actions?.authenticated(uniqueId, isRegistration) }
+                    override fun authenticated(username: String) { actions?.authenticated(username) }
+                    override fun loggedOut(uniqueId: UUID) { actions?.loggedOut(uniqueId) }
+                    override fun accountDeleted(uniqueId: UUID) { actions?.accountDeleted(uniqueId) }
+                    override fun accountDeleted(username: String) { actions?.accountDeleted(username) }
+                    override fun broadcast(message: String) { actions?.broadcast(message) }
+                })
+                .build()
+            bootstrap = boot
+
+            actions = BungeeAuthActions(proxy, boot.proxySettings, boot.messages)
+
+            val limbo = boot.limbo
+            if (config.limbo.enabled && limbo != null) {
+                val serverName = config.limbo.serverName
+                proxy.servers[serverName] = proxy.constructServerInfo(
+                    serverName,
+                    InetSocketAddress(limbo.host(), limbo.port()),
+                    "pnAuth authentication limbo", false
+                )
+            }
+
             val commandRegistry = CommandRegistry()
-            commandRegistry.register(commandService)
-            val access = AuthAccessService(authService, proxySettings, config.access, messages)
-            val lifecycle = AuthLifecycleCoordinator(authService, access)
+            commandRegistry.register(boot.commandService)
+
             val dListener = BungeeDialogListener(
-                this, authService, commandService, messages, config.features,
-                config.security.maxPasswordLength, proxySettings, bPlatform, commandRegistry
+                this, boot.authService, boot.commandService, boot.messages, config.features,
+                config.security.maxPasswordLength, boot.proxySettings, bPlatform, commandRegistry
             )
             dialogListener = dListener
+
             val cRegistrar = BungeeCommandRegistrar(
-                this, proxy.pluginManager, commandRegistry, messages.format()
+                this, proxy.pluginManager, commandRegistry, boot.messages.format()
             )
             commandRegistrar = cRegistrar
             cRegistrar.register()
+
             val aListener = BungeeAuthListener(
-                proxy, this, lifecycle, messages, commandService, dListener
+                proxy, this, boot.lifecycleCoordinator, boot.messages, boot.commandService, dListener
             )
             listener = aListener
-            authTasks = BungeeAuthTasks(this, authService, messages, config.features, proxySettings)
+
+            authTasks = BungeeAuthTasks(this, boot.authService, boot.messages, config.features, boot.proxySettings)
         } catch (exception: Exception) {
             throw IllegalStateException("pnAuth could not be initialized", exception)
         }
@@ -171,7 +147,7 @@ class PnAuthBungeePlugin : Plugin() {
             authTasks?.close()
         }
         commandRegistrar?.close()
-        auth?.close()
+        bootstrap?.close()
         playerDisplay?.close()
         val currentDialogs = playerDialogs
         if (currentDialogs is AutoCloseable) {
@@ -181,16 +157,11 @@ class PnAuthBungeePlugin : Plugin() {
                 logger.warning("Could not close the pnAuth PacketEvents adapter: ${exception.message}")
             }
         }
-        migration?.close()
-        if (limbo != null) {
-            proxy.servers.remove(limbo!!.id())
-            limbo?.close()
-        }
     }
 
-    fun getApi(): AuthApi? = auth
+    fun getApi(): AuthApi? = bootstrap?.authService
 
-    fun getKernel(): ExtensionKernel? = auth
+    fun getKernel(): ExtensionKernel? = bootstrap?.authService
 
     fun getPlatform(): PnPlatform? = platform
 

@@ -15,28 +15,18 @@ import com.velocitypowered.api.proxy.server.ServerInfo
 import net.kyori.adventure.text.Component
 import org.slf4j.Logger
 import ru.privatenull.pnauth.api.AuthApi
-import ru.privatenull.pnauth.command.AuthCommandService
+import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
-import ru.privatenull.pnauth.flow.AuthLifecycleCoordinator
 import ru.privatenull.pnauth.kernel.ExtensionKernel
-import ru.privatenull.pnauth.limbo.LimboServer
-import ru.privatenull.pnauth.limbo.LimboServerContext
-import ru.privatenull.pnauth.limbo.LimboServerRegistry
-import ru.privatenull.pnauth.limbo.PicoLimboProvider
-import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.PnPlatform
-import ru.privatenull.pnauth.policy.AuthAccessService
-import ru.privatenull.pnauth.security.TotpKeyStore
-import ru.privatenull.pnauth.security.TotpService
-import ru.privatenull.pnauth.service.AuthService
-import ru.privatenull.pnauth.storage.AuthMigrationService
-import ru.privatenull.pnauth.storage.JdbcAuthRepository
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator
 import java.net.InetSocketAddress
 import java.nio.file.Path
+import java.util.UUID
 import java.util.function.Function
 
 @Plugin(
@@ -51,16 +41,12 @@ class PnAuthVelocityPlugin @Inject constructor(
     private val logger: Logger,
     @DataDirectory private val dataDirectory: Path
 ) {
-    private var auth: AuthService? = null
+    private var bootstrap: PnAuthBootstrap? = null
     private var commandRegistrar: VelocityCommandRegistrar? = null
-    private var messages: AuthMessages? = null
     private var actions: VelocityAuthActions? = null
     private var authTasks: VelocityAuthTasks? = null
-    private var migration: AuthMigrationService? = null
-    private var limbo: LimboServer? = null
     private var limboServer: RegisteredServer? = null
     private var dialogs: VelocityDialogCoordinator? = null
-    private var lifecycle: AuthLifecycleCoordinator? = null
     private var playerDisplay: VelocityPlayerDisplay? = null
     private var platform: VelocityPlatform? = null
     private var playerDialogs: PacketEventsPlayerDialogs? = null
@@ -82,99 +68,66 @@ class PnAuthVelocityPlugin @Inject constructor(
             }
             val defaultUrl = "jdbc:sqlite:" + dataDirectory.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
-            var proxySettings: ProxySettings = config.proxy
-            if (proxySettings.hasBackendServer() && proxy.getServer(proxySettings.backendServer).isEmpty) {
-                throw IllegalArgumentException(
-                    "Unknown servers.backend-server '" + proxySettings.backendServer + "'; register that server in velocity.toml"
-                )
-            }
-            for (target in LinkedHashSet(proxySettings.forcedHosts.values)) {
-                if (proxy.getServer(target).isEmpty) {
-                    throw IllegalArgumentException(
-                        "Unknown servers.forced-hosts target '" + target + "'; register that server in velocity.toml"
-                    )
-                }
-            }
-            val limboRegistry = LimboServerRegistry()
-            limboRegistry.register(PicoLimboProvider())
-            val createdLimbo = limboRegistry.create(config.limbo.provider, LimboServerContext(dataDirectory, config.limbo))
-            limbo = createdLimbo
-            if (config.limbo.enabled) {
-                if (!config.proxy.authServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException("proxy.auth-server must equal limbo.server-name when limbo is enabled")
-                }
-                if (config.proxy.backendServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException(
-                        "servers.backend-server must differ from limbo.server-name; auth and backend cannot share a name"
-                    )
-                }
-                try {
-                    createdLimbo.start()
-                    val serverName = config.limbo.serverName
-                    limboServer = proxy.registerServer(
-                        ServerInfo(
-                            serverName, InetSocketAddress(createdLimbo.host(), createdLimbo.port())
-                        )
-                    )
-                    logger.info(
-                        "Registered embedded auth route '{}' at {}:{}; authenticated players route to '{}'.",
-                        serverName, createdLimbo.host(), createdLimbo.port(), config.proxy.backendServer
-                    )
-                    proxySettings = proxySettings.requiringServerAuth()
-                } catch (exception: Exception) {
-                    createdLimbo.close()
-                    limbo = null
-                    throw IllegalStateException(
-                        "Embedded PicoLimbo is enabled but could not be started. " +
-                                "pnAuth refuses to continue with an unsecured authentication route.", exception
-                    )
-                }
-            }
-            val repository = JdbcAuthRepository(
-                config.storage.url,
-                config.storage.username,
-                config.storage.password
-            )
-            val authService = AuthService(
-                repository, config.security, TotpService(
-                    repository, TotpKeyStore.loadOrCreate(dataDirectory.resolve("totp.key"))
-                ), config.features
-            )
-            auth = authService
+            validateBackendTargets(config.proxy)
+
             val display = VelocityPlayerDisplay(proxy, config.messageFormat)
             playerDisplay = display
-            authService.installDisplay(display)
+
             val pDialogs = PacketEventsPlayerDialogs(Function { uniqueId -> proxy.getPlayer(uniqueId).orElse(null) })
             playerDialogs = pDialogs
+
             val pForm = VelocityPlatform(this, proxy, display, config.messageFormat, pDialogs)
             platform = pForm
-            authService.installPlatform(pForm)
-            val authMessages = AuthMessages.load(dataDirectory.resolve("messages"), config.locale, config.messageFormat)
-            messages = authMessages
-            val velocityActions = VelocityAuthActions(proxy, proxySettings, authMessages, config.messageFormat)
-            actions = velocityActions
-            val authMigration = AuthMigrationService(repository)
-            migration = authMigration
-            val commandService = AuthCommandService(authService, authMessages, velocityActions, authMigration, config.features)
+
+            var vActions: VelocityAuthActions? = null
+
+            // Fluent bootstrap builder
+            val boot = PnAuthBootstrap.builder()
+                .dataFolder(dataDirectory)
+                .logger { message -> logger.info(message) }
+                .platform(pForm)
+                .display(display)
+                .authBridge(object : AuthPlatformBridge {
+                    override fun authenticated(uniqueId: UUID) { vActions?.authenticated(uniqueId) }
+                    override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { vActions?.authenticated(uniqueId, isRegistration) }
+                    override fun authenticated(username: String) { vActions?.authenticated(username) }
+                    override fun loggedOut(uniqueId: UUID) { vActions?.loggedOut(uniqueId) }
+                    override fun accountDeleted(uniqueId: UUID) { vActions?.accountDeleted(uniqueId) }
+                    override fun accountDeleted(username: String) { vActions?.accountDeleted(username) }
+                    override fun broadcast(message: String) { vActions?.broadcast(message) }
+                })
+                .build()
+            bootstrap = boot
+
+            vActions = VelocityAuthActions(proxy, boot.proxySettings, boot.messages, config.messageFormat)
+            actions = vActions
+
+            val limbo = boot.limbo
+            if (config.limbo.enabled && limbo != null) {
+                val serverName = config.limbo.serverName
+                limboServer = proxy.registerServer(
+                    ServerInfo(serverName, InetSocketAddress(limbo.host(), limbo.port()))
+                )
+            }
+
             val vDialogs = VelocityDialogCoordinator(
-                proxy, authService, commandService, authMessages,
-                config.features, config.messageFormat, config.security.maxPasswordLength, proxySettings, pForm
+                proxy, boot.authService, boot.commandService, boot.messages,
+                config.features, config.messageFormat, config.security.maxPasswordLength, boot.proxySettings, pForm
             )
             dialogs = vDialogs
-            val access = AuthAccessService(authService, proxySettings, config.access, authMessages)
-            val vLifecycle = AuthLifecycleCoordinator(authService, access)
-            lifecycle = vLifecycle
-            val vCmdRegistrar = VelocityCommandRegistrar(proxy, commandService, config.messageFormat)
+
+            val vCmdRegistrar = VelocityCommandRegistrar(proxy, boot.commandService, config.messageFormat)
             commandRegistrar = vCmdRegistrar
             vCmdRegistrar.register()
+
             proxy.eventManager.register(
                 this, VelocityAuthListener(
-                    proxy, authService, vLifecycle, config.messageFormat, limboServer,
-                    proxySettings, vDialogs, authMessages
+                    proxy, boot.authService, boot.lifecycleCoordinator, config.messageFormat, limboServer,
+                    boot.proxySettings, vDialogs, boot.messages
                 )
             )
             val tasks = VelocityAuthTasks(
-                this, proxy, authService, authMessages, config.features, proxySettings,
+                this, proxy, boot.authService, boot.messages, config.features, boot.proxySettings,
                 config.messageFormat, vDialogs
             )
             authTasks = tasks
@@ -190,32 +143,26 @@ class PnAuthVelocityPlugin @Inject constructor(
     @Subscribe
     fun onDisconnect(event: DisconnectEvent) {
         dialogs?.clearSession(event.player)
-        val currentAuth = auth
-        if (currentAuth != null) {
-            lifecycle?.quit(event.player.uniqueId)
-        }
+        bootstrap?.lifecycleCoordinator?.quit(event.player.uniqueId)
     }
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
-        auth?.close()
+        bootstrap?.close()
         playerDisplay?.close()
-        migration?.close()
         limboServer?.let { server ->
             proxy.unregisterServer(server.serverInfo)
         }
-        limbo?.close()
         commandRegistrar?.close()
         authTasks?.close()
         dialogs?.close()
         playerDialogs?.close()
     }
 
-    fun getApi(): AuthApi? = auth
+    fun getApi(): AuthApi? = bootstrap?.authService
 
-    fun getKernel(): ExtensionKernel? = auth
+    fun getKernel(): ExtensionKernel? = bootstrap?.authService
 
-    /** Returns the platform-neutral player API. */
     fun getPlatform(): PnPlatform? = platform
 
     private fun dependencyRestartNotice() {
@@ -227,5 +174,20 @@ class PnAuthVelocityPlugin @Inject constructor(
         logger.warn(" Automatic process restart requires an external server wrapper.")
         logger.warn(" Settings: plugins/pnAuth/dependencies.yml")
         logger.warn("============================================================")
+    }
+
+    private fun validateBackendTargets(settings: ProxySettings) {
+        if (settings.hasBackendServer() && proxy.getServer(settings.backendServer).isEmpty) {
+            throw IllegalArgumentException(
+                "Unknown servers.backend-server '" + settings.backendServer + "'; register that server in velocity.toml"
+            )
+        }
+        for (target in LinkedHashSet(settings.forcedHosts.values)) {
+            if (proxy.getServer(target).isEmpty) {
+                throw IllegalArgumentException(
+                    "Unknown servers.forced-hosts target '" + target + "'; register that server in velocity.toml"
+                )
+            }
+        }
     }
 }
