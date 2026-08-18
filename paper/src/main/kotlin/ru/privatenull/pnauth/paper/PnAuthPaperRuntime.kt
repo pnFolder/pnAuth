@@ -16,7 +16,7 @@ import ru.privatenull.pnauth.message.AuthMessages
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.Proxy
-import ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter
+import ru.privatenull.pnauth.platform.adapter.DeferredAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import java.nio.file.Path
 
@@ -56,15 +56,7 @@ class PnAuthPaperRuntime private constructor(
 
             // Paper side-effects requested by shared authentication events
             val actions = PaperAuthActions(plugin, messages)
-            val bridge = object : PlatformAuthBridgeAdapter {
-                override fun authenticated(uniqueId: java.util.UUID) = actions.authenticated(uniqueId)
-                override fun authenticated(uniqueId: java.util.UUID, isRegistration: Boolean) = actions.authenticated(uniqueId)
-                override fun authenticated(username: String) = actions.authenticated(username)
-                override fun loggedOut(uniqueId: java.util.UUID) = actions.loggedOut(uniqueId)
-                override fun accountDeleted(uniqueId: java.util.UUID) = actions.accountDeleted(uniqueId)
-                override fun accountDeleted(username: String) = actions.accountDeleted(username)
-                override fun broadcast(message: String) = actions.broadcast(message)
-            }
+            val bridge = DeferredAuthBridgeAdapter().apply { bind(actions) }
 
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataFolder)

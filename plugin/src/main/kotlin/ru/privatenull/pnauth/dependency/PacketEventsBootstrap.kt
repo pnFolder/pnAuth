@@ -164,6 +164,28 @@ object PacketEventsBootstrap {
 
     enum class Result { AVAILABLE, INSTALLED_RESTART_REQUIRED, DISABLED }
 
+    /**
+     * Prints a standard first-run notice when PacketEvents was installed automatically.
+     *
+     * This message is intentionally identical across proxy platforms except for the platform name,
+     * so runtimes do not have to duplicate the same logging boilerplate.
+     */
+    @JvmStatic
+    fun logRestartNotice(platform: Platform, warn: Consumer<String>) {
+        val proxyName = when (platform) {
+            Platform.BUNGEECORD -> "BungeeCord"
+            Platform.VELOCITY -> "Velocity"
+        }
+        warn.accept("============================================================")
+        warn.accept(" pnAuth FIRST-RUN SETUP")
+        warn.accept(" PacketEvents was downloaded and SHA-256 verified successfully.")
+        warn.accept(" The proxy is stopping intentionally so $proxyName can load it.")
+        warn.accept(" START THE PROXY ONE MORE TIME to finish enabling pnAuth.")
+        warn.accept(" Automatic process restart requires an external server wrapper.")
+        warn.accept(" Settings: plugins/pnAuth/dependencies.yml")
+        warn.accept("============================================================")
+    }
+
     private data class Settings(
         val enabled: Boolean,
         val url: String,
