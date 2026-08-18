@@ -78,8 +78,9 @@ class AuthService internal constructor(
     extensions: AuthExtensionRegistry
 ) : AuthApi {
 
-    private val executor = Executors.newFixedThreadPool(2) { runnable ->
-        Thread(runnable, "pnauth-worker").apply { isDaemon = true }
+    private val workerThreadIndex = AtomicLong()
+    private val executor = Executors.newFixedThreadPool(workerThreads()) { runnable ->
+        Thread(runnable, "pnauth-worker-" + workerThreadIndex.incrementAndGet()).apply { isDaemon = true }
     }
     private val generations = AtomicLong()
     private val joining: ConcurrentMap<UUID, Long> = ConcurrentHashMap()
@@ -1016,6 +1017,18 @@ class AuthService internal constructor(
     }
 
     companion object {
+        /**
+         * AuthService is used across proxy and server platforms, so it must stay lightweight by default.
+         *
+         * Override via JVM property `pnauth.workerThreads` when running large networks:
+         * `-Dpnauth.workerThreads=8`.
+         */
+        private fun workerThreads(): Int {
+            val configured = System.getProperty("pnauth.workerThreads")?.toIntOrNull()
+            val defaultThreads = kotlin.math.max(2, Runtime.getRuntime().availableProcessors())
+            return (configured ?: defaultThreads).coerceIn(1, 64)
+        }
+
         private fun withTotp(record: AuthRecord, secret: String?): AuthRecord {
             return AuthRecord(
                 record.uniqueId, record.username, record.realName, record.passwordHash, record.registeredAt,
