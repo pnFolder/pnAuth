@@ -1,6 +1,6 @@
 package ru.privatenull.pnauth.dependency
 
-import org.yaml.snakeyaml.Yaml
+import ru.privatenull.pnauth.configuration.SafeYaml
 import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpClient
@@ -51,12 +51,13 @@ object PacketEventsBootstrap {
         Files.createDirectories(target.parent)
         val temporary = Files.createTempFile(target.parent, ".pnauth-packetevents-", ".download")
         try {
-            log.accept("Downloading PacketEvents for ${platform.configKey} from ${settings.url}")
+            val downloadUri = validateDownloadUri(settings.url, log)
+            log.accept("Downloading PacketEvents for ${platform.configKey} from $downloadUri")
             val client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(settings.timeoutSeconds.toLong()))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build()
-            val request = HttpRequest.newBuilder(URI.create(settings.url))
+            val request = HttpRequest.newBuilder(downloadUri)
                 .timeout(Duration.ofSeconds(settings.timeoutSeconds.toLong()))
                 .GET()
                 .build()
@@ -75,7 +76,7 @@ object PacketEventsBootstrap {
 
     private fun load(file: Path, platform: Platform): Settings {
         Files.newInputStream(file).use { input ->
-            val root = Yaml().load<Map<*, *>>(input) ?: emptyMap<Any, Any>()
+            val root = SafeYaml.create().load<Map<*, *>>(input) ?: emptyMap<Any, Any>()
             val enabled = booleanValue(root["auto-install"], true)
             val timeout = integerValue(root["timeout-seconds"], 30)
             val packetEvents = map(root["packet-events"], "packet-events")
@@ -88,6 +89,24 @@ object PacketEventsBootstrap {
                 timeoutSeconds = timeout.coerceAtLeast(5)
             )
         }
+    }
+
+    private fun validateDownloadUri(url: String, log: Consumer<String>): URI {
+        val uri = try {
+            URI.create(url)
+        } catch (exception: RuntimeException) {
+            throw IllegalArgumentException("Invalid PacketEvents URL: $url", exception)
+        }
+        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.host.isNullOrBlank()) {
+            throw IllegalArgumentException("PacketEvents URL must be https:// and contain a host")
+        }
+        val host = uri.host.lowercase(Locale.ROOT)
+        val trusted = host == "github.com" || host.endsWith(".github.com") ||
+            host == "objects.githubusercontent.com" || host.endsWith(".githubusercontent.com")
+        if (!trusted) {
+            log.accept("WARNING: PacketEvents download host is not a GitHub domain: $host")
+        }
+        return uri
     }
 
     private fun writeDefaults(file: Path) {

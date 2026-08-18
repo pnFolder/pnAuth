@@ -54,48 +54,13 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val handles: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()
     private val actions: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()
     private val listener: PacketListenerCommon
+    private val debugPackets: Boolean = java.lang.Boolean.getBoolean("pnauth.debug.packets")
 
     init {
         if (!packets.isLoaded || packets.isTerminated) {
             throw IllegalStateException("PacketEvents must be loaded before creating dialog transport")
         }
         listener = packets.eventManager.registerListener(ResponseListener())
-        val listener = DialogPacketDebugListener()
-
-        PacketEvents.getAPI()
-            .eventManager
-            .registerListener(listener)
-    }
-
-    class DialogPacketDebugListener : PacketListenerAbstract() {
-
-        override fun onPacketSend(event: PacketSendEvent) {
-
-//            println(
-//                "[PE-OUT] type=${event.packetType} " +
-//                        "user=${event.user.name} " +
-//                        "version=${event.user.clientVersion}"
-//            )
-
-            if (event.packetType == PacketType.Play.Server.SHOW_DIALOG) {
-
-                println("[PE-OUT] >>> SHOW_DIALOG DETECTED <<<")
-
-                try {
-                    val wrapper = WrapperPlayServerShowDialog(event)
-
-                    println("[PE-OUT] dialog=${wrapper.dialog}")
-                    println(
-                        "[PE-OUT] dialogClass=" +
-                                wrapper.dialog.javaClass.name
-                    )
-
-                } catch (t: Throwable) {
-                    println("[PE-OUT] FAILED TO READ SHOW_DIALOG")
-                    t.printStackTrace()
-                }
-            }
-        }
     }
 
     override fun supported(player: Player): Boolean {
@@ -264,7 +229,11 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
 
             diagnostics.accept("[pnAuth] testDialog packet sent successfully")
         } catch (e: Throwable) {
-            e.printStackTrace()
+            if (debugPackets) {
+                diagnostics.accept("[pnAuth] testDialog failed: " + e.stackTraceToString())
+            } else {
+                diagnostics.accept("[pnAuth] testDialog failed: " + (e.message ?: e.javaClass.simpleName))
+            }
         }
     }
 
