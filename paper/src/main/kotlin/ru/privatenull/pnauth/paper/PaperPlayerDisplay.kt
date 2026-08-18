@@ -16,9 +16,11 @@ import ru.privatenull.pnauth.display.BossBarOverlay
 import ru.privatenull.pnauth.display.DisplayHandle
 import ru.privatenull.pnauth.display.Easing
 import ru.privatenull.pnauth.display.PlayerDisplay
+import ru.privatenull.pnauth.display.TitleBuilder
 import ru.privatenull.pnauth.display.TitleHandle
 import ru.privatenull.pnauth.display.TitleOptions
 import ru.privatenull.pnauth.platform.PlayerResourceKey
+import ru.privatenull.pnauth.platform.adapter.PlatformDisplayAdapter
 import java.time.Duration
 import java.util.HashSet
 import java.util.Optional
@@ -27,7 +29,27 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Stateful Paper/Folia display implementation backed by Adventure audiences. */
-class PaperPlayerDisplay(private val plugin: Plugin) : PlayerDisplay, AutoCloseable {
+class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, AutoCloseable {
+
+    override fun showTitle(uniqueId: UUID, builder: TitleBuilder) {
+        title(
+            uniqueId,
+            PLATFORM_TITLE_ID,
+            TitleOptions(
+                builder.title,
+                builder.subtitle,
+                builder.fadeIn,
+                builder.stay,
+                builder.fadeOut,
+                Duration.ZERO,
+                builder.fadeIn.plus(builder.stay).plus(builder.fadeOut)
+            )
+        )
+    }
+
+    override fun clearTitle(uniqueId: UUID) {
+        removeTitle(uniqueId, PLATFORM_TITLE_ID)
+    }
 
     private val actionBars: MutableMap<PlayerResourceKey, Action> = ConcurrentHashMap()
     private val titles: MutableMap<PlayerResourceKey, PlayerTitle> = ConcurrentHashMap()
@@ -362,6 +384,8 @@ class PaperPlayerDisplay(private val plugin: Plugin) : PlayerDisplay, AutoClosea
     }
 
     companion object {
+        private const val PLATFORM_TITLE_ID = "pnauth:platform-title"
+
         private fun close(handle: DisplayHandle?): Boolean {
             if (handle == null) return false
             handle.close()
