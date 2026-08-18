@@ -13,7 +13,7 @@ import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.Proxy
-import ru.privatenull.pnauth.platform.adapter.PlatformAuthBridgeAdapter
+import ru.privatenull.pnauth.platform.adapter.DeferredAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import java.nio.file.Path
@@ -49,7 +49,7 @@ class PnAuthBungeeRuntime private constructor(
                 plugin.dataFolder.toPath().parent
             ) { message -> plugin.logger.info(message) }
             if (result == PacketEventsBootstrap.Result.INSTALLED_RESTART_REQUIRED) {
-                dependencyRestartNotice()
+                PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.BUNGEECORD, plugin.logger::warning)
                 proxyServer.stop("PacketEvents installed by pnAuth; restart the proxy")
                 return false
             }
@@ -86,7 +86,7 @@ class PnAuthBungeeRuntime private constructor(
             val proxyFacade = BungeeProxyAdapter(plugin, proxyServer, bungeePlatform)
             proxyAdapter = proxyFacade
 
-            var actions: BungeeAuthActions? = null
+            val bridge = DeferredAuthBridgeAdapter()
 
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataFolder)
@@ -95,19 +95,11 @@ class PnAuthBungeeRuntime private constructor(
                 .display(display)
                 .dialogs(dialogs)
                 .proxy(proxyFacade)
-                .authBridge(object : PlatformAuthBridgeAdapter {
-                    override fun authenticated(uniqueId: UUID) { actions?.authenticated(uniqueId) }
-                    override fun authenticated(uniqueId: UUID, isRegistration: Boolean) { actions?.authenticated(uniqueId, isRegistration) }
-                    override fun authenticated(username: String) { actions?.authenticated(username) }
-                    override fun loggedOut(uniqueId: UUID) { actions?.loggedOut(uniqueId) }
-                    override fun accountDeleted(uniqueId: UUID) { actions?.accountDeleted(uniqueId) }
-                    override fun accountDeleted(username: String) { actions?.accountDeleted(username) }
-                    override fun broadcast(message: String) { actions?.broadcast(message) }
-                })
+                .authBridge(bridge)
                 .build()
             bootstrap = boot
 
-            actions = BungeeAuthActions(proxyServer, boot.proxySettings, boot.messages, proxyFacade)
+            bridge.bind(BungeeAuthActions(proxyServer, boot.proxySettings, boot.messages, proxyFacade))
 
             val commandRegistry = CommandRegistry()
             commandRegistry.register(boot.commandService)
@@ -170,17 +162,6 @@ class PnAuthBungeeRuntime private constructor(
     override fun proxy(): Proxy? = proxyAdapter
 
     fun proxyAdapter(): BungeeProxyAdapter? = proxyAdapter
-
-    private fun dependencyRestartNotice() {
-        plugin.logger.warning("============================================================")
-        plugin.logger.warning(" pnAuth FIRST-RUN SETUP")
-        plugin.logger.warning(" PacketEvents was downloaded and SHA-256 verified successfully.")
-        plugin.logger.warning(" The proxy is stopping intentionally so BungeeCord can load it.")
-        plugin.logger.warning(" START THE PROXY ONE MORE TIME to finish enabling pnAuth.")
-        plugin.logger.warning(" Automatic process restart requires an external server wrapper.")
-        plugin.logger.warning(" Settings: plugins/pnAuth/dependencies.yml")
-        plugin.logger.warning("============================================================")
-    }
 
     private fun validateBackendTargets(settings: ProxySettings) {
         val targets = LinkedHashSet(settings.forcedHosts.values)
