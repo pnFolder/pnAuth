@@ -20,6 +20,7 @@ import ru.privatenull.pnauth.dialog.PlayerDialog
 import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.platform.Player
 import ru.privatenull.pnauth.platform.PlayerResourceKey
+import ru.privatenull.pnauth.platform.adapter.PlatformDialogAdapter
 import java.util.ArrayList
 import java.util.LinkedHashMap
 import java.util.Locale
@@ -34,7 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Consumer
 
 /** Runtime adapter for the vanilla dialog protocol available since Minecraft 1.21.6. */
-class PaperPlayerDialogs(private val plugin: Plugin) : PlayerDialogs, AutoCloseable {
+class PaperPlayerDialogs(private val plugin: Plugin) : PlatformDialogAdapter, AutoCloseable {
 
     private val nativeDialogsAvailable: Boolean = supportsNativeDialogs()
     private val handles: ConcurrentMap<PlayerResourceKey, NativeHandle> = ConcurrentHashMap()
