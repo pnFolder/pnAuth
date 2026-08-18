@@ -1,5 +1,7 @@
 package ru.privatenull.pnauth.config
 
+import java.net.URI
+
 @JvmRecord
 data class LimboSettings(
     val provider: String,
@@ -15,8 +17,17 @@ data class LimboSettings(
         if (provider.isBlank() || serverName.isBlank() || host.isBlank()
             || port < 1 || port > 65_535 || downloadBaseUrl.isBlank()
             || !downloadSha256.matches(Regex("(?i)[a-f0-9]{64}"))
-        ) {
-            throw IllegalArgumentException("Invalid limbo settings")
+        ) throw IllegalArgumentException("Invalid limbo settings")
+
+        // The limbo wrapper is downloaded and later used to load a native library.
+        // Restrict to HTTPS to prevent trivial MITM and local scheme abuse.
+        val uri = try {
+            URI.create(downloadBaseUrl)
+        } catch (exception: RuntimeException) {
+            throw IllegalArgumentException("Invalid limbo download URL", exception)
+        }
+        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.host.isNullOrBlank()) {
+            throw IllegalArgumentException("Limbo download URL must be https:// and contain a host")
         }
     }
 

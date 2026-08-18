@@ -1,6 +1,6 @@
 package ru.privatenull.pnauth.message
 
-import org.yaml.snakeyaml.Yaml
+import ru.privatenull.pnauth.configuration.SafeYaml
 import ru.privatenull.pnauth.api.AuthStatus
 import java.io.IOException
 import java.io.InputStream
@@ -56,7 +56,7 @@ class AuthMessages private constructor(
         fun load(directory: Path, locale: String, format: MessageFormat?): AuthMessages {
             MessageFileGenerator.ensureAll(directory)
             val file = MessageFileGenerator.ensure(directory, locale)
-            val root = Yaml().load<Any>(Files.readString(file, StandardCharsets.UTF_8))
+            val root = SafeYaml.create().load<Any>(Files.readString(file, StandardCharsets.UTF_8))
             val flattened = HashMap<String, Any>(MessageCatalog.defaults(locale))
             flatten("", root, flattened)
             return AuthMessages(flattened, format ?: MessageFormat.LEGACY)

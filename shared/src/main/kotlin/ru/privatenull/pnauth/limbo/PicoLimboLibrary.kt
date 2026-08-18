@@ -43,7 +43,8 @@ internal object PicoLimboLibrary {
     private fun downloadAndVerify(target: Path, url: String, expected: String) {
         val temporary = target.resolveSibling(target.fileName.toString() + ".download")
         try {
-            val connection = URI.create(url).toURL().openConnection()
+            val uri = validateDownloadUri(url)
+            val connection = uri.toURL().openConnection()
             connection.connectTimeout = DOWNLOAD_CONNECT_TIMEOUT_MILLIS
             connection.readTimeout = DOWNLOAD_READ_TIMEOUT_MILLIS
             if (connection.contentLengthLong > MAX_DOWNLOAD_BYTES) {
@@ -75,6 +76,18 @@ internal object PicoLimboLibrary {
         } finally {
             Files.deleteIfExists(temporary)
         }
+    }
+
+    private fun validateDownloadUri(url: String): URI {
+        val uri = try {
+            URI.create(url)
+        } catch (exception: RuntimeException) {
+            throw IOException("Invalid PicoLimbo download URL: $url", exception)
+        }
+        if (!"https".equals(uri.scheme, ignoreCase = true) || uri.host.isNullOrBlank()) {
+            throw IOException("PicoLimbo download URL must be https:// and contain a host")
+        }
+        return uri
     }
 
     private fun extractNativeLibrary(wrapper: Path, target: Path) {
