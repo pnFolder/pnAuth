@@ -18,7 +18,6 @@ import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import java.nio.file.Path
 import java.util.UUID
-import java.util.function.Consumer
 import java.util.function.Function
 
 /**
@@ -75,8 +74,7 @@ class PnAuthBungeeRuntime private constructor(
             playerDisplay = display
 
             val dialogs = PacketEventsPlayerDialogs(
-                Function { uniqueId: UUID -> proxyServer.getPlayer(uniqueId) },
-                Consumer { message: String -> plugin.logger.info(message) }
+                Function { uniqueId: UUID -> proxyServer.getPlayer(uniqueId) }
             )
             playerDialogs = dialogs
 

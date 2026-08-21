@@ -1,0 +1,14 @@
+{
+  "id": "pnauth",
+  "name": "pnAuth",
+  "version": "${version}",
+  "description": "Authentication plugin for Velocity",
+  "authors": ["privatenull"],
+  "dependencies": [
+    {
+      "id": "packetevents",
+      "optional": true
+    }
+  ],
+  "main": "ru.privatenull.pnauth.velocity.PnAuthVelocityPlugin"
+}

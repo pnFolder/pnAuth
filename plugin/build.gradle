@@ -1,6 +1,5 @@
 plugins {
     id 'com.gradleup.shadow'
-    id 'org.jetbrains.kotlin.kapt'
 }
 
 def pluginVersion = version.toString()
@@ -29,7 +28,11 @@ sourceSets {
             ]
         }
         resources {
-            srcDirs = [file('../bungeecord/src/main/resources'), file('../paper/src/main/resources')]
+            srcDirs = [
+                    file('../bungeecord/src/main/resources'),
+                    file('../velocity/src/main/resources'),
+                    file('../paper/src/main/resources')
+            ]
         }
     }
 }
@@ -50,7 +53,7 @@ object PnAuthBuild {
     }
 }
 
-tasks.matching { it.name.startsWith('compile') || it.name.startsWith('kapt') }.configureEach {
+tasks.matching { it.name.startsWith('compile') }.configureEach {
     dependsOn generateBuildInfo
 }
 
@@ -66,7 +69,6 @@ dependencies {
     compileOnly 'io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT'
     compileOnly 'com.github.retrooper:packetevents-velocity:2.13.0'
     compileOnly 'com.github.retrooper:packetevents-bungeecord:2.13.1-SNAPSHOT'
-    kapt 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
     implementation project(':shared')
     implementation 'net.kyori:adventure-text-minimessage:4.17.0'
     implementation 'net.kyori:adventure-text-serializer-gson:4.17.0'
@@ -91,6 +93,9 @@ tasks.named('shadowJar') {
     filesMatching('META-INF/services/**') {
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
     }
+    filesMatching('META-INF/*.kotlin_module') {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     mergeServiceFiles()
     relocate 'org.yaml.snakeyaml', 'ru.privatenull.pnauth.libs.snakeyaml'
     relocate 'net.elytrium.serializer', 'ru.privatenull.pnauth.libs.serializer'
@@ -110,6 +115,9 @@ processResources {
         expand(version: pluginVersion)
     }
     filesMatching('plugin.yml') {
+        expand(version: pluginVersion)
+    }
+    filesMatching('velocity-plugin.json') {
         expand(version: pluginVersion)
     }
 }

@@ -4,13 +4,6 @@ import com.github.retrooper.packetevents.PacketEvents
 import com.github.retrooper.packetevents.event.PacketListenerAbstract
 import com.github.retrooper.packetevents.event.PacketListenerCommon
 import com.github.retrooper.packetevents.event.PacketReceiveEvent
-import com.github.retrooper.packetevents.event.PacketSendEvent
-import com.github.retrooper.packetevents.protocol.dialog.CommonDialogData
-import com.github.retrooper.packetevents.protocol.dialog.NoticeDialog
-import com.github.retrooper.packetevents.protocol.dialog.action.ActionTypes
-import com.github.retrooper.packetevents.protocol.dialog.body.PlainMessage
-import com.github.retrooper.packetevents.protocol.dialog.button.ActionButton
-import com.github.retrooper.packetevents.protocol.dialog.button.CommonButtonData
 import com.github.retrooper.packetevents.protocol.nbt.NBT
 import com.github.retrooper.packetevents.protocol.nbt.NBTCompound
 import com.github.retrooper.packetevents.protocol.nbt.NBTList
@@ -22,7 +15,6 @@ import com.github.retrooper.packetevents.wrapper.PacketWrapper
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCustomClickAction
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerClearDialog
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerShowDialog
-import net.kyori.adventure.text.Component
 import ru.privatenull.pnauth.dialog.DialogAction
 import ru.privatenull.pnauth.dialog.DialogButton
 import ru.privatenull.pnauth.dialog.DialogHandle
@@ -54,8 +46,6 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val handles: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()
     private val actions: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()
     private val listener: PacketListenerCommon
-    private val debugPackets: Boolean = java.lang.Boolean.getBoolean("pnauth.debug.packets")
-
     init {
         if (!packets.isLoaded || packets.isTerminated) {
             throw IllegalStateException("PacketEvents must be loaded before creating dialog transport")
@@ -64,17 +54,18 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     }
 
     override fun supported(player: Player): Boolean {
-        val nativeValue = nativePlayer.apply(player.uniqueId())
-        if (nativeValue == null) return false
-        val ver = packets.playerManager.getClientVersion(nativeValue)
-        // UNKNOWN means PacketEvents doesn't recognise the version — future/snapshot clients.
-        // They still receive dialog packets, so treat them as supported.
-        return ver == ClientVersion.UNKNOWN
-            || ver.isNewerThanOrEquals(ClientVersion.V_1_21_6)
+        val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
+        if (!attached(nativeValue)) return false
+        return try {
+            packets.playerManager.getClientVersion(nativeValue)
+                .isNewerThanOrEquals(ClientVersion.V_1_21_6)
+        } catch (_: RuntimeException) {
+            false
+        }
     }
 
     override fun show(player: Player, dialog: PlayerDialog): DialogHandle {
-        if (!supported(player)) throw UnsupportedOperationException("Native dialogs require client 1.21.4+")
+        if (!supported(player)) throw UnsupportedOperationException("Native dialogs require client 1.21.6+")
         val key = PlayerResourceKey(player.uniqueId(), dialog.id)
         return handles.compute(key) { _, current ->
             if (current == null || !current.active()) Handle(key, dialog)
@@ -197,59 +188,21 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
         }
     }
 
-    private fun testDialog(player: Any) {
+    private fun sendSafely(player: Any, packet: PacketWrapper<*>) {
+        if (!attached(player)) return
         try {
-            val dialog = NoticeDialog(
-                CommonDialogData(
-                    Component.text("Test Dialog"),
-                    PlainMessage(
-                        Component.text("Hello from PacketEvents!"),
-                        300
-                    ).contents,
-                    false,
-                    false,
-                    com.github.retrooper.packetevents.protocol.dialog.DialogAction.CLOSE,
-                    emptyList(),
-                    emptyList()
-                ),
-                ActionButton(
-                    CommonButtonData(
-                        Component.text("OK"),
-                        null,
-                        100
-                    ),
-                    null
-                )
-            )
-
-            packets.playerManager.sendPacket(
-                player,
-                WrapperPlayServerShowDialog(dialog)
-            )
-
-            diagnostics.accept("[pnAuth] testDialog packet sent successfully")
-        } catch (e: Throwable) {
-            if (debugPackets) {
-                diagnostics.accept("[pnAuth] testDialog failed: " + e.stackTraceToString())
-            } else {
-                diagnostics.accept("[pnAuth] testDialog failed: " + (e.message ?: e.javaClass.simpleName))
-            }
+            packets.playerManager.sendPacket(player, packet)
+        } catch (_: RuntimeException) {
+            // Disconnect may release the PacketEvents channel between the check and send.
         }
     }
 
-    private fun sendSafely(player: Any, packet: PacketWrapper<*>) {
-        try {
-            packets.playerManager.sendPacket(player, packet)
-        } catch (exception: Throwable) {
-            try {
-                val user = packets.protocolManager.getUser(player)
-                if (user != null && packet is com.github.retrooper.packetevents.wrapper.PacketWrapper<*>) {
-                    user.sendPacket(packet)
-                    return
-                }
-            } catch (_: Throwable) {
-                // Disconnect may release the PacketEvents channel before the Bungee event fires.
-            }
+    private fun attached(player: Any): Boolean {
+        if (packets.isTerminated) return false
+        return try {
+            packets.protocolManager.getUser(player) != null
+        } catch (_: RuntimeException) {
+            false
         }
     }
 
