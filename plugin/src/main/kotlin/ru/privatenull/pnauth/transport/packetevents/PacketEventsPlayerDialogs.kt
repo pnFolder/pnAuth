@@ -35,11 +35,15 @@ import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Consumer
 import java.util.function.Function
+import java.util.function.ToIntFunction
 
 /** Complete native dialog transport shared by BungeeCord and Velocity. */
 class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val nativePlayer: Function<UUID, Any?>,
-    private val diagnostics: Consumer<String> = Consumer { }
+    private val diagnostics: Consumer<String> = Consumer { },
+    private val clientProtocol: ToIntFunction<UUID> = ToIntFunction { playerId ->
+        platformProtocolVersion(nativePlayer.apply(playerId))
+    }
 ) : ru.privatenull.pnauth.platform.adapter.PlatformDialogAdapter, AutoCloseable {
 
     private val packets = PacketEvents.getAPI()
@@ -60,11 +64,11 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             val userVersion = packets.protocolManager.getUser(nativeValue)?.clientVersion
             val packetEventsSupportsDialogs = userVersion != null && userVersion != ClientVersion.UNKNOWN &&
                 userVersion.isNewerThanOrEquals(ClientVersion.V_1_21_6)
-            val platformSupportsDialogs = platformProtocolVersion(nativeValue) >=
+            val platformSupportsDialogs = clientProtocol.applyAsInt(player.uniqueId()) >=
                 ClientVersion.V_1_21_6.protocolVersion
             packetEventsSupportsDialogs || platformSupportsDialogs
         } catch (_: RuntimeException) {
-            platformProtocolVersion(nativeValue) >= ClientVersion.V_1_21_6.protocolVersion
+            clientProtocol.applyAsInt(player.uniqueId()) >= ClientVersion.V_1_21_6.protocolVersion
         }
     }
 
