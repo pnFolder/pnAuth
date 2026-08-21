@@ -59,7 +59,7 @@ subprojects {
 }
 
 tasks.register('dist', Sync) {
-    dependsOn ':shared:test', ':plugin:shadowJar', ':hub:shadowJar'
+    dependsOn ':shared:test', ':plugin:verifyRuntimeLayout', ':hub:shadowJar'
     from(project(':plugin').tasks.named('shadowJar'))
     from(project(':hub').tasks.named('shadowJar'))
     into layout.buildDirectory.dir('dist')
