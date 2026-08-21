@@ -58,7 +58,9 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     }
 
     override fun show(player: Player, dialog: PlayerDialog): DialogHandle {
-        if (!supported(player)) throw UnsupportedOperationException("Native dialogs require client 1.21.6+")
+        if (!supported(player)) {
+            throw UnsupportedOperationException("PacketEvents connection is not attached to the player yet")
+        }
         val key = PlayerResourceKey(player.uniqueId(), dialog.id)
         return handles.compute(key) { _, current ->
             if (current == null || !current.active()) Handle(key, dialog)
@@ -193,7 +195,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private fun attached(player: Any): Boolean {
         if (packets.isTerminated) return false
         return try {
-            packets.protocolManager.getUser(player) != null
+            packets.playerManager.getUser(player) != null
         } catch (_: RuntimeException) {
             false
         }
@@ -236,7 +238,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
             val expectedPlayer = nativePlayer.apply(key.playerId) ?: continue
             if (expectedPlayer == event.getPlayer()) return handle
             try {
-                if (packets.protocolManager.getUser(expectedPlayer) == event.user) {
+                if (packets.playerManager.getUser(expectedPlayer) == event.user) {
                     return handle
                 }
             } catch (ignored: RuntimeException) {
