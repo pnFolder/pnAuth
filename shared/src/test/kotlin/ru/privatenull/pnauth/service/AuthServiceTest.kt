@@ -105,11 +105,34 @@ class AuthServiceTest {
 
         assertEquals(AuthResult.SUCCESS, service.changePassword(uniqueId, "oldPass", "newPass").join())
 
+        assertEquals(AuthStatus.UNAUTHENTICATED, service.status(uniqueId))
+        assertEquals(AuthResult.INVALID_PASSWORD, service.login(uniqueId, "oldPass").join())
+        assertEquals(AuthResult.SUCCESS, service.login(uniqueId, "newPass").join())
+
         service.onQuit(uniqueId)
         service.onJoin(uniqueId, "User").join()
 
         assertEquals(AuthResult.INVALID_PASSWORD, service.login(uniqueId, "oldPass").join())
         assertEquals(AuthResult.SUCCESS, service.login(uniqueId, "newPass").join())
+    }
+
+    @Test
+    fun `password change revokes trusted ip session`() {
+        val restoreService = AuthService(
+            repository, AuthSettings(4, 32, 3, Duration.ofMinutes(1), 10_000),
+            TotpService(repository, ByteArray(32)), restoreSessionSettings()
+        )
+        restoreService.use {
+            val uniqueId = UUID.randomUUID()
+            assertEquals(AuthStatus.UNREGISTERED, it.onJoin(uniqueId, "SecureUser", "127.0.0.1").join())
+            assertEquals(AuthResult.SUCCESS, it.register(uniqueId, "SecureUser", "oldPass", "oldPass").join())
+            assertEquals(AuthResult.SUCCESS, it.changePassword(uniqueId, "oldPass", "newPass").join())
+            assertEquals(AuthStatus.UNAUTHENTICATED, it.status(uniqueId))
+
+            it.onQuit(uniqueId)
+            assertEquals(AuthStatus.UNAUTHENTICATED, it.onJoin(uniqueId, "SecureUser", "127.0.0.1").join())
+            assertEquals(AuthResult.SUCCESS, it.login(uniqueId, "newPass").join())
+        }
     }
 
     @Test

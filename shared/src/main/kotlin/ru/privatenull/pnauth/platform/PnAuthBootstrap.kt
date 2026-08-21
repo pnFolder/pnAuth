@@ -217,7 +217,12 @@ class PnAuthBootstrap private constructor(
                     )
                     ClusterMode.HUB -> HubClusterTransport(requireNotNull(hubClient), config.cluster.nodeId)
                 }
-                AuthClusterCoordinator(config.cluster.nodeId, authService, clusterTransport)
+                AuthClusterCoordinator(
+                    config.cluster.nodeId,
+                    authService,
+                    clusterTransport,
+                    dataFolder.resolve("cluster-outbox")
+                )
             } catch (error: Exception) {
                 externalVerification.close()
                 authService.close()

@@ -92,6 +92,22 @@ class AuthService internal constructor(
         pendingTotpSetups.remove(uniqueId)
     }
 
+    /** Отзывает авторизацию, но оставляет игрока подключённым, чтобы он мог войти заново. */
+    fun revokeClusterSession(uniqueId: UUID) {
+        joining.remove(uniqueId)
+        sessions.computeIfPresent(uniqueId) { _, session ->
+            Session(
+                session.generation,
+                session.record,
+                if (session.record == null) AuthStatus.UNREGISTERED else AuthStatus.UNAUTHENTICATED,
+                session.ip
+            )
+        }
+        failedAttempts.remove(uniqueId)
+        failedTotpAttempts.remove(uniqueId)
+        pendingTotpSetups.remove(uniqueId)
+    }
+
     private val workerThreadIndex = AtomicLong()
     private val executor = Executors.newFixedThreadPool(workerThreads()) { runnable ->
         Thread(runnable, "pnauth-worker-" + workerThreadIndex.incrementAndGet()).apply { isDaemon = true }
@@ -341,7 +357,7 @@ class AuthService internal constructor(
         if (preEvent.cancelled()) return completedOperation(request, AuthResult.OPERATION_DENIED)
         return async {
             var session = sessions[uniqueId] ?: return@async LoginPreparation(null, AuthResult.NOT_JOINED)
-            val record = session.record ?: return@async LoginPreparation(null, AuthResult.NOT_REGISTERED)
+            var record = session.record ?: return@async LoginPreparation(null, AuthResult.NOT_REGISTERED)
             if (session.status == AuthStatus.AUTHENTICATED) return@async LoginPreparation(null, AuthResult.ALREADY_AUTHENTICATED)
             val authority = credentialAuthority
             if (authority != null) {
@@ -356,6 +372,12 @@ class AuthService internal constructor(
                 if (result == AuthResult.TOTP_REQUIRED) return@async LoginPreparation(null, result)
                 return@async LoginPreparation(session, null)
             }
+            // Межузловое событие могло отозвать сессию после смены пароля.
+            // Перед новой локальной проверкой всегда читаем актуальную запись из общей SQL-базы.
+            record = repository.findByUniqueId(uniqueId).orElse(null)
+                ?: return@async LoginPreparation(null, AuthResult.NOT_REGISTERED)
+            session = Session(session.generation, record, session.status, session.ip)
+            sessions[uniqueId] = session
             val attemptKey = attemptKey(uniqueId, session)
             if (isLocked(attemptKey)) return@async LoginPreparation(null, AuthResult.LOCKED_OUT)
             if (password.length > settings.maxPasswordLength ||
@@ -416,6 +438,7 @@ class AuthService internal constructor(
                 val decision = authority.changePassword(uniqueId, oldPassword, newPassword).toCompletableFuture().join()
                 val result = credentialResult(decision.status)
                 if (result == AuthResult.SUCCESS) {
+                    revokeClusterSession(uniqueId)
                     eventsBus.publish(PasswordChangedEvent(uniqueId, session.record.realName(), false))
                 }
                 return@guarded result
@@ -426,6 +449,7 @@ class AuthService internal constructor(
             if (!settings.isPasswordValid(newPassword)) return@guarded AuthResult.INVALID_PASSWORD_FORMAT
             val passwordHash = PasswordHasher.hash(newPassword, settings)
             repository.updatePassword(uniqueId, passwordHash)
+            repository.updateLastIp(uniqueId, null)
             val record = AuthRecord(
                 session.record.uniqueId(),
                 session.record.username(),
@@ -435,11 +459,12 @@ class AuthService internal constructor(
                 session.record.lastLoginAt(),
                 session.record.premium(),
                 session.record.registeredIp(),
-                session.record.lastIp(),
+                null,
                 session.record.totpSecret(),
                 session.record.dialogPreference()
             )
-            replaceSession(uniqueId, session, Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip))
+            // Любая смена пароля отзывает текущую сессию. Повторный вход уже использует новый пароль.
+            replaceSession(uniqueId, session, Session(session.generation, record, AuthStatus.UNAUTHENTICATED, session.ip))
             eventsBus.publish(PasswordChangedEvent(uniqueId, record.realName(), false))
             AuthResult.SUCCESS
         }
@@ -687,11 +712,12 @@ class AuthService internal constructor(
             if (!settings.isPasswordValid(newPassword)) return@guarded AuthResult.INVALID_PASSWORD_FORMAT
             val passwordHash = PasswordHasher.hash(newPassword, settings)
             repository.updatePassword(record.uniqueId, passwordHash)
+            repository.updateLastIp(record.uniqueId, null)
             val session = sessions[record.uniqueId]
             if (session != null) {
                 val updated = AuthRecord(
                     record.uniqueId, record.username, record.realName, passwordHash, record.registeredAt,
-                    record.lastLoginAt, record.premium, record.registeredIp, record.lastIp, record.totpSecret,
+                    record.lastLoginAt, record.premium, record.registeredIp, null, record.totpSecret,
                     record.dialogPreference
                 )
                 replaceSession(record.uniqueId, session, Session(session.generation, updated, session.status, session.ip))

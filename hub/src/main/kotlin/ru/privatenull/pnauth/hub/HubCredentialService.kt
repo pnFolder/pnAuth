@@ -70,6 +70,7 @@ class HubCredentialService(
         if (!PasswordHasher.matches(request.currentPassword, record.passwordHash)) return CredentialResult("INVALID_CREDENTIALS")
         if (!settings.isPasswordValid(request.newPassword)) return CredentialResult("INVALID_NEW_PASSWORD")
         repository.updatePassword(record.uniqueId, PasswordHasher.hash(request.newPassword, settings))
+        repository.updateLastIp(record.uniqueId, null)
         return CredentialResult("SUCCESS", record.uniqueId.toString(), record.realName)
     }
 
@@ -143,6 +144,7 @@ class HubCredentialService(
         val record = repository.findByUsername(request.username.lowercase(Locale.ROOT)).orElse(null)
             ?: return CredentialResult("PLAYER_NOT_FOUND")
         repository.updatePassword(record.uniqueId, PasswordHasher.hash(request.password, settings))
+        repository.updateLastIp(record.uniqueId, null)
         return CredentialResult("SUCCESS", record.uniqueId.toString(), record.realName)
     }
 
