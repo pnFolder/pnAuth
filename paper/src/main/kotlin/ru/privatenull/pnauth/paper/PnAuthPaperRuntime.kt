@@ -19,6 +19,8 @@ import ru.privatenull.pnauth.platform.Proxy
 import ru.privatenull.pnauth.platform.adapter.DeferredAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import java.nio.file.Path
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Paper/Folia runtime wiring for pnAuth.
@@ -33,6 +35,7 @@ class PnAuthPaperRuntime private constructor(
     private var platform: PaperPlatform? = null
     private var dialogs: PaperPlayerDialogs? = null
     private var paperSettings: PaperSettings? = null
+    private val originalLocations = ConcurrentHashMap<UUID, Location>()
 
     fun onEnable() {
         try {
@@ -55,7 +58,7 @@ class PnAuthPaperRuntime private constructor(
             )
 
             // Paper side-effects requested by shared authentication events
-            val actions = PaperAuthActions(plugin, messages)
+            val actions = PaperAuthActions(plugin, messages, ::teleportAfterAuthentication)
             val bridge = DeferredAuthBridgeAdapter().apply { bind(actions) }
 
             val boot = PnAuthBootstrap.builder()
@@ -89,6 +92,7 @@ class PnAuthPaperRuntime private constructor(
     }
 
     override fun close() {
+        originalLocations.clear()
         display?.close()
         dialogs?.close()
         bootstrap?.close()
@@ -97,6 +101,7 @@ class PnAuthPaperRuntime private constructor(
     @EventHandler
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
+        originalLocations[player.uniqueId] = player.location.clone()
         val ip = player.address?.address?.hostAddress
         bootstrap?.authService?.onJoin(player.uniqueId, player.name, ip)
         tryTeleport(player)
@@ -104,6 +109,7 @@ class PnAuthPaperRuntime private constructor(
 
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
+        originalLocations.remove(event.player.uniqueId)
         bootstrap?.authService?.onQuit(event.player.uniqueId)
     }
 
@@ -133,6 +139,33 @@ class PnAuthPaperRuntime private constructor(
             settings.pitch
         )
         player.scheduler.run(plugin, { player.teleportAsync(target) }, null)
+    }
+
+    private fun teleportAfterAuthentication(playerId: UUID) {
+        val player = plugin.server.getPlayer(playerId) ?: return
+        val settings = paperSettings ?: return
+        val target = when (settings.successDestination) {
+            PaperSettings.SuccessDestination.ORIGINAL -> originalLocations.remove(playerId)
+            PaperSettings.SuccessDestination.SPAWN -> plugin.server.getWorld(settings.successWorld)?.spawnLocation
+            PaperSettings.SuccessDestination.CUSTOM -> plugin.server.getWorld(settings.successWorld)?.let { world ->
+                Location(
+                    world, settings.successX, settings.successY, settings.successZ,
+                    settings.successYaw, settings.successPitch
+                )
+            }
+            PaperSettings.SuccessDestination.NONE -> null
+        }
+        if (settings.successDestination != PaperSettings.SuccessDestination.ORIGINAL) {
+            originalLocations.remove(playerId)
+        }
+        if (target == null) {
+            if (settings.successDestination != PaperSettings.SuccessDestination.NONE) {
+                plugin.logger.warning("Paper success teleport destination is unavailable for ${player.name}.")
+            }
+            return
+        }
+        val ticks = ((settings.successDelayMillis + 49L) / 50L).coerceAtLeast(1L)
+        player.scheduler.runDelayed(plugin, { player.teleportAsync(target) }, null, ticks)
     }
 
     companion object {

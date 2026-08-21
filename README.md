@@ -215,6 +215,51 @@ java -jar pnAuth-hub-1.0.0.jar /path/to/pnauth-hub
 
 Пользовательский `custom` provider получает событие `pnauth.verification.v1`. Подписываются HTTP method, path, timestamp, nonce и SHA-256 тела. Это позволяет подключить собственный сайт, панель или бота без доступа к SQL и паролям.
 
+Полный протокол, PHP 8.2 endpoint, SQL-схема, Node.js/Express пример, nginx и production checklist: [docs/CUSTOM_VERIFICATION_RU.md](docs/CUSTOM_VERIFICATION_RU.md).
+
+## Автономная авторизация на Paper/Folia
+
+Paper/Folia — полноценный самостоятельный режим pnAuth без BungeeCord или Velocity. Плагин сам обрабатывает join, регистрацию, вход, TOTP и native dialog, а до авторизации блокирует настроенные действия игрока.
+
+```yaml
+paper:
+  teleport:
+    enabled: true
+    world: auth
+    x: 0.5
+    y: 100.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+  success-teleport:
+    # ORIGINAL, SPAWN, CUSTOM или NONE
+    destination: ORIGINAL
+    delay-millis: 500
+    world: world
+    x: 0.5
+    y: 80.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+  restrictions:
+    movement: true
+    chat: true
+    commands: true
+    interaction: true
+    breaking: true
+    placing: true
+    inventory: true
+```
+
+- `ORIGINAL` возвращает игрока в сохранённую точку входа.
+- `SPAWN` отправляет на spawn указанного мира.
+- `CUSTOM` использует заданные координаты.
+- `NONE` не выполняет телепортацию после авторизации.
+
+Планировщики телепортации совместимы с региональной моделью Folia. Для автономного Paper не нужен proxy-сервер; используется тот же `pnAuth-1.0.0.jar`.
+
 ## Limbo
 
 Встроенный PicoLimbo отключён по умолчанию. При включении `limbo.enabled: true` укажите одинаковое значение для `servers.auth-server` и `limbo.server-name`; `servers.backend-server` должен быть другим сервером. Бинарный файл загружается только из заданного URL и проверяется SHA-256.

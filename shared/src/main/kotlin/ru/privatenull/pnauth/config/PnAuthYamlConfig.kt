@@ -373,6 +373,7 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     class Paper {
         @Comment(CommentValue("Ограничения автономного Paper/Folia-сервера до авторизации."))
         @JvmField var teleport: Teleport = Teleport()
+        @JvmField var successTeleport: SuccessTeleport = SuccessTeleport()
         @JvmField var restrictions: Restrictions = Restrictions()
 
         class Teleport {
@@ -389,6 +390,24 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
             @Comment(CommentValue("Горизонтальный угол взгляда игрока."))
             @JvmField var yaw: Float = 0.0f
             @Comment(CommentValue("Вертикальный угол взгляда игрока."))
+            @JvmField var pitch: Float = 0.0f
+        }
+
+        class SuccessTeleport {
+            @Comment(
+                CommentValue("Куда отправить игрока после успешной авторизации:"),
+                CommentValue("ORIGINAL — место входа; SPAWN — spawn мира; CUSTOM — координаты ниже; NONE — оставить в точке ожидания.")
+            )
+            @JvmField var destination: String = "ORIGINAL"
+            @Comment(CommentValue("Задержка после успешного входа перед телепортацией, в миллисекундах."))
+            @JvmField var delayMillis: Long = 500
+            @Comment(CommentValue("Мир для режимов SPAWN и CUSTOM."))
+            @JvmField var world: String = "world"
+            @Comment(CommentValue("Координаты и направление взгляда для режима CUSTOM."))
+            @JvmField var x: Double = 0.5
+            @JvmField var y: Double = 100.0
+            @JvmField var z: Double = 0.5
+            @JvmField var yaw: Float = 0.0f
             @JvmField var pitch: Float = 0.0f
         }
 

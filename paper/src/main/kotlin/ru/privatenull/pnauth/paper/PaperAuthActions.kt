@@ -10,11 +10,14 @@ import java.util.UUID
 /** Paper/Folia side effects requested by shared authentication events. */
 internal class PaperAuthActions(
     private val plugin: Plugin,
-    private val messages: AuthMessages
+    private val messages: AuthMessages,
+    private val onAuthenticated: (UUID) -> Unit
 ) : AuthPlatformBridge {
 
-    override fun authenticated(uniqueId: UUID) {}
-    override fun authenticated(username: String) {}
+    override fun authenticated(uniqueId: UUID) = onAuthenticated(uniqueId)
+    override fun authenticated(username: String) {
+        Bukkit.getPlayerExact(username)?.uniqueId?.let(onAuthenticated)
+    }
 
     override fun loggedOut(uniqueId: UUID) {
         disconnect(uniqueId, messages.text("logout.disconnect"))

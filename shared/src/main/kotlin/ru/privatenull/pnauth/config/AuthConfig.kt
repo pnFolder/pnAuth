@@ -31,7 +31,7 @@ data class AuthConfig(
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 7
+        const val CURRENT_SCHEMA_VERSION = 8
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -65,6 +65,7 @@ data class AuthConfig(
             val external = yaml.externalVerification ?: PnAuthYamlConfig.ExternalVerification()
             val cluster = yaml.cluster ?: PnAuthYamlConfig.Cluster()
             val teleport = paper.teleport ?: PnAuthYamlConfig.Paper.Teleport()
+            val successTeleport = paper.successTeleport ?: PnAuthYamlConfig.Paper.SuccessTeleport()
             val restrictions = paper.restrictions ?: PnAuthYamlConfig.Paper.Restrictions()
             val password = security.password ?: PnAuthYamlConfig.Security.Password()
             val login = security.login ?: PnAuthYamlConfig.Security.Login()
@@ -154,7 +155,11 @@ data class AuthConfig(
                 ),
                 PaperSettings(
                     teleport.enabled, teleport.world, teleport.x, teleport.y, teleport.z,
-                    teleport.yaw, teleport.pitch, restrictions.movement, restrictions.chat,
+                    teleport.yaw, teleport.pitch,
+                    enumValue(successTeleport.destination, PaperSettings.SuccessDestination.ORIGINAL),
+                    successTeleport.world, successTeleport.x, successTeleport.y, successTeleport.z,
+                    successTeleport.yaw, successTeleport.pitch, successTeleport.delayMillis,
+                    restrictions.movement, restrictions.chat,
                     restrictions.commands, restrictions.interaction, restrictions.breaking,
                     restrictions.placing, restrictions.inventory
                 ),
