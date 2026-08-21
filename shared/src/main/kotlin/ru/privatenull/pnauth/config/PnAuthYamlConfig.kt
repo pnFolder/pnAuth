@@ -10,13 +10,13 @@ import java.nio.file.Path
 
 open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
 
-    @Comment(CommentValue("Schema version. Managed automatically; do not change unless migration notes say otherwise."))
+    @Comment(CommentValue("Версия схемы. Обновляется автоматически; не изменяйте вручную."))
     @JvmField
     var configVersion: Int = AuthConfig.CURRENT_SCHEMA_VERSION
 
     @Comment(
-        CommentValue("Language for generated player messages"),
-        CommentValue("Supported values: ru, en")
+        CommentValue("Язык сообщений, создаваемых для игроков."),
+        CommentValue("Поддерживаемые значения: ru, en.")
     )
     @JvmField
     var locale: String = "ru"
@@ -54,11 +54,14 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     @JvmField
     var paper: Paper = Paper()
 
+    @JvmField
+    var externalVerification: ExternalVerification = ExternalVerification()
+
     @NewLine
     class Messages {
         @Comment(
-            CommentValue("LEGACY, MINI_MESSAGE, JSON or PLAIN"),
-            CommentValue("Built-in translations and messages_<locale>.yml use this format")
+            CommentValue("Формат сообщений: LEGACY, MINI_MESSAGE, JSON или PLAIN."),
+            CommentValue("Он применяется к встроенному переводу и файлу messages_<locale>.yml.")
         )
         @JvmField
         var format: String = "LEGACY"
@@ -67,21 +70,25 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     @NewLine
     class Database {
         @Comment(
-            CommentValue("SQLITE, H2, MYSQL, MARIADB, POSTGRESQL or JDBC"),
-            CommentValue("For a network use MYSQL, MARIADB or POSTGRESQL")
+            CommentValue("Тип хранилища: SQLITE, H2, MYSQL, MARIADB, POSTGRESQL или JDBC."),
+            CommentValue("Для сети серверов используйте MYSQL, MARIADB или POSTGRESQL.")
         )
         @JvmField
         var type: String = "SQLITE"
 
+        @Comment(CommentValue("Имя файла локальной SQLite/H2-базы относительно папки pnAuth."))
         @JvmField
         var file: String = "auth.db"
 
+        @Comment(CommentValue("Полный JDBC URL. Если заполнен, имеет приоритет над готовыми настройками ниже."))
         @JvmField
         var url: String = ""
 
+        @Comment(CommentValue("Пользователь для JDBC URL; для SQLite обычно оставляется пустым."))
         @JvmField
         var username: String = ""
 
+        @Comment(CommentValue("Пароль для JDBC URL. Не публикуйте конфигурацию с этим значением."))
         @JvmField
         var password: String = ""
 
@@ -93,46 +100,52 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     }
 
     class Connection @JvmOverloads constructor(
+        @Comment(CommentValue("Порт SQL-сервера."))
         @JvmField var port: Int = 3306
     ) {
+        @Comment(CommentValue("Адрес SQL-сервера."))
         @JvmField var host: String = "127.0.0.1"
+        @Comment(CommentValue("Имя базы данных."))
         @JvmField var database: String = "minecraft_auth"
+        @Comment(CommentValue("Пользователь SQL-базы."))
         @JvmField var username: String = ""
+        @Comment(CommentValue("Пароль пользователя SQL-базы."))
         @JvmField var password: String = ""
 
-        @Comment(CommentValue("Use and verify TLS for a remote SQL connection. Disable only for a local trusted database."))
+        @Comment(CommentValue("Включает и проверяет TLS для удалённой SQL-базы. Отключайте только для локальной доверенной базы."))
         @JvmField var useSsl: Boolean = true
 
+        @Comment(CommentValue("Часовой пояс SQL-сервера."))
         @JvmField var serverTimezone: String = "UTC"
     }
 
     @NewLine
     class Servers {
-        @Comment(CommentValue("Registered proxy server used before authentication"))
+        @Comment(CommentValue("Имя сервера в конфигурации прокси, используемого до авторизации."))
         @JvmField var authServer: String = "auth"
 
-        @Comment(CommentValue("Server a player joins after successful authentication"))
+        @Comment(CommentValue("Сервер, на который игрок попадёт после успешной авторизации."))
         @JvmField var backendServer: String = "hub"
 
-        @Comment(CommentValue("List of target backend servers for load balancing"))
+        @Comment(CommentValue("Список основных серверов для балансировки; пустой список использует backend-server."))
         @JvmField var backendServers: List<String> = ArrayList()
 
-        @Comment(CommentValue("List of target auth servers for load balancing"))
+        @Comment(CommentValue("Список auth-серверов для балансировки; пустой список использует auth-server."))
         @JvmField var authServers: List<String> = ArrayList()
 
-        @Comment(CommentValue("Load balancer strategy: LEAST_PLAYERS, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM, FILLING"))
+        @Comment(CommentValue("Режим балансировки: LEAST_PLAYERS, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM или FILLING."))
         @JvmField var balancerMode: String = "LEAST_PLAYERS"
 
-        @Comment(CommentValue("Maximum players per server when using FILLING mode"))
+        @Comment(CommentValue("Общий лимит игроков на сервер для режима FILLING."))
         @JvmField var maxPlayersPerServer: Int = 100
 
-        @Comment(CommentValue("Per-server custom max player limits (e.g. hub-small: 50, hub-large: 250)"))
+        @Comment(CommentValue("Индивидуальные лимиты серверов, например: hub-small: 50, hub-large: 250."))
         @JvmField var serverLimits: Map<String, Int> = LinkedHashMap()
 
-        @Comment(CommentValue("Keep unauthenticated players on auth-server (recommended for every public network)"))
+        @Comment(CommentValue("Запрещает переход с auth-сервера до авторизации. Рекомендуется для публичной сети."))
         @JvmField var requireAuthBeforeServer: Boolean = true
 
-        @Comment(CommentValue("Hostname to backend server mapping"))
+        @Comment(CommentValue("Соответствие домена входа и конечного сервера."))
         @JvmField var forcedHosts: Map<String, String> = LinkedHashMap()
     }
 
@@ -143,49 +156,59 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
         @JvmField var hashing: Hashing = Hashing()
 
         class Password {
-            @Comment(CommentValue("Allowed password length, inclusive"))
+            @Comment(CommentValue("Минимальная и максимальная длина пароля включительно."))
             @JvmField var minLength: Int = 8
 
+            @Comment(CommentValue("Максимальная допустимая длина пароля."))
             @JvmField var maxLength: Int = 64
+            @Comment(CommentValue("Требует повторить пароль при регистрации для защиты от опечатки."))
             @JvmField var repeatOnRegister: Boolean = true
         }
 
         class Login {
+            @Comment(CommentValue("Число неверных попыток до временной блокировки."))
             @JvmField var maxAttempts: Int = 5
+            @Comment(CommentValue("Продолжительность блокировки после превышения попыток, в секундах."))
             @JvmField var lockoutSeconds: Int = 60
+            @Comment(CommentValue("Включает временный IP-бан после серии неверных паролей."))
             @JvmField var banOnFailedLogin: Boolean = true
+            @Comment(CommentValue("Продолжительность временного IP-бана, в секундах."))
             @JvmField var banSeconds: Int = 60
         }
 
         class Hashing {
             @Comment(
-                CommentValue("PBKDF2, BCRYPT or ARGON2"),
-                CommentValue("PBKDF2 is the portable default")
+                CommentValue("Алгоритм хеширования: PBKDF2, BCRYPT или ARGON2."),
+                CommentValue("PBKDF2 — безопасный и наиболее совместимый вариант по умолчанию.")
             )
             @JvmField var algorithm: String = "PBKDF2"
 
-            @Comment(CommentValue("PBKDF2-HMAC-SHA256 iterations; 600000 is the secure portable default"))
+            @Comment(CommentValue("Число итераций PBKDF2-HMAC-SHA256; безопасное значение по умолчанию — 600000."))
             @JvmField var pbkdf2Iterations: Int = 600_000
 
+            @Comment(CommentValue("Стоимость BCRYPT. Чем больше значение, тем медленнее перебор и вход."))
             @JvmField var bcryptCost: Int = 12
+            @Comment(CommentValue("Число проходов ARGON2."))
             @JvmField var argon2Iterations: Int = 2
+            @Comment(CommentValue("Память ARGON2 на одну проверку пароля, в KiB."))
             @JvmField var argon2MemoryKb: Int = 65_536
+            @Comment(CommentValue("Число параллельных потоков ARGON2."))
             @JvmField var argon2Parallelism: Int = 1
         }
     }
 
     @NewLine
     class Validation {
-        @Comment(CommentValue("Regular expression applied to the Minecraft nickname"))
+        @Comment(CommentValue("Регулярное выражение для проверки ника Minecraft."))
         @JvmField var usernamePattern: String = "^[A-Za-z0-9_]{3,16}$"
     }
 
     @NewLine
     class Access {
-        @Comment(CommentValue("Prevent unauthenticated players from using proxy chat"))
+        @Comment(CommentValue("Блокирует чат прокси до авторизации."))
         @JvmField var blockChat: Boolean = true
 
-        @Comment(CommentValue("Command names allowed before authentication, without leading slash"))
+        @Comment(CommentValue("Команды, разрешённые до авторизации; указываются без начального слеша."))
         @JvmField var unauthenticatedCommands: List<String> = listOf(
             "auth", "pnauth", "register", "reg", "login", "l", "logout",
             "changepassword", "changepass", "totp", "2fa", "status"
@@ -194,9 +217,11 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
 
     @NewLine
     class Limits {
-        @Comment(CommentValue("Maximum simultaneous online accounts from one IP address"))
+        @Comment(CommentValue("Максимум одновременно подключённых аккаунтов с одного IP-адреса."))
         @JvmField var maxOnlineAccountsPerIp: Int = 10
+        @Comment(CommentValue("Максимум зарегистрированных аккаунтов с одного IP-адреса."))
         @JvmField var maxRegisteredAccountsPerIp: Int = 10
+        @Comment(CommentValue("IP-адреса, для которых лимиты аккаунтов не применяются."))
         @JvmField var excludedIps: List<String> = listOf("127.0.0.1")
     }
 
@@ -208,45 +233,53 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
         @JvmField var captcha: Captcha = Captcha()
 
         class Premium {
+            @Comment(CommentValue("Разрешает доверенный автоматический вход для premium-аккаунтов."))
             @JvmField var enabled: Boolean = true
         }
 
         class Session {
             @Comment(
-                CommentValue("Restore a password session when the IP address matches the previous login"),
-                CommentValue("Disabled by default: shared NATs and VPNs make IP-only authentication unsafe")
+                CommentValue("Восстанавливает сессию без пароля при совпадении IP с прошлым входом."),
+                CommentValue("По умолчанию выключено: общий NAT и VPN делают доверие только по IP небезопасным.")
             )
             @JvmField var restoreOnSameIp: Boolean = false
 
-            @Comment(CommentValue("Session lifetime after successful authentication"))
+            @Comment(CommentValue("Срок действия восстановленной сессии после успешной авторизации, в минутах."))
             @JvmField var lifetimeMinutes: Int = 60
 
-            @Comment(CommentValue("Disconnect after this many seconds without authentication"))
+            @Comment(CommentValue("Через сколько секунд отключить игрока, если он не авторизовался."))
             @JvmField var timeoutSeconds: Int = 60
 
             @Comment(
-                CommentValue("Seconds between unauthenticated reminders"),
-                CommentValue("The first reminder is sent after this delay; 0 disables reminders")
+                CommentValue("Интервал напоминаний об авторизации в секундах."),
+                CommentValue("Первое напоминание приходит через этот интервал; 0 отключает напоминания.")
             )
             @JvmField var reminderSeconds: Int = 10
         }
 
         class Totp {
+            @Comment(CommentValue("Включает двухфакторную авторизацию TOTP и команды /totp."))
             @JvmField var enabled: Boolean = true
+            @Comment(CommentValue("Число неверных TOTP-кодов до блокировки."))
             @JvmField var maxAttempts: Int = 3
+            @Comment(CommentValue("Продолжительность блокировки TOTP после превышения попыток, в секундах."))
             @JvmField var lockoutSeconds: Int = 60
 
-            @Comment(CommentValue("Seconds allowed to confirm a newly generated 2FA setup"))
+            @Comment(CommentValue("Сколько секунд даётся на подтверждение новой настройки 2FA."))
             @JvmField var setupLifetimeSeconds: Int = 300
 
+            @Comment(CommentValue("Название сервера в приложении-аутентификаторе."))
             @JvmField var issuer: String = "Minecraft Server"
+            @Comment(CommentValue("Сколько одноразовых резервных кодов создавать игроку."))
             @JvmField var recoveryCodes: Int = 16
         }
 
         class Captcha {
-            @Comment(CommentValue("Require a one-time clickable challenge before showing the password dialog"))
+            @Comment(CommentValue("Требует одноразовую кликабельную проверку перед показом формы пароля."))
             @JvmField var enabled: Boolean = false
+            @Comment(CommentValue("Срок действия captcha-проверки, в секундах."))
             @JvmField var lifetimeSeconds: Int = 30
+            @Comment(CommentValue("Число неверных кликов до создания новой captcha."))
             @JvmField var maxAttempts: Int = 3
         }
     }
@@ -255,43 +288,56 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     class Ui {
         @JvmField var dialogs: Dialogs = Dialogs()
         @JvmField var processingTitle: ProcessingTitle = ProcessingTitle()
+        @Comment(CommentValue("Включает обычные title-подсказки авторизации."))
         @JvmField var title: Boolean = false
+        @Comment(CommentValue("Включает подсказки авторизации в actionbar."))
         @JvmField var actionbar: Boolean = false
 
         class Dialogs {
+            @Comment(CommentValue("Включает нативные диалоговые окна новых клиентов Minecraft."))
             @JvmField var enabled: Boolean = true
+            @Comment(CommentValue("Разрешает команды как запасной способ входа, если диалоги недоступны."))
             @JvmField var fallbackToCommands: Boolean = true
+            @Comment(CommentValue("Разрешает игроку самостоятельно отключить диалоги."))
             @JvmField var allowPlayerPreference: Boolean = true
+            @Comment(CommentValue("Минимальный protocol ID клиента, которому можно отправлять native dialog."))
             @JvmField var minClientProtocol: Int = 771
         }
 
         class ProcessingTitle {
-            @Comment(CommentValue("Show an animated title only while a password is actually being processed"))
+            @Comment(CommentValue("Показывает анимированный title только во время фактической обработки пароля."))
             @JvmField var enabled: Boolean = true
             @JvmField var animation: Animation = Animation()
             @JvmField var timings: Timings = Timings()
 
             class Animation {
-                @Comment(CommentValue("NONE or GRADIENT"))
+                @Comment(CommentValue("Тип анимации: NONE или GRADIENT."))
                 @JvmField var type: String = "GRADIENT"
+                @Comment(CommentValue("Цвета градиента в формате #RRGGBB; можно указать два и более цвета."))
                 @JvmField var colors: List<String> = listOf("#d8b4fe", "#f0abfc", "#c4b5fd")
 
-                @Comment(CommentValue("Number of gradient positions in one seamless animation cycle"))
+                @Comment(CommentValue("Количество кадров в одном бесшовном цикле градиента."))
                 @JvmField var frameCount: Int = 12
             }
 
             class Timings {
+                @Comment(CommentValue("Пауза между кадрами анимации, в миллисекундах."))
                 @JvmField var frameIntervalMillis: Int = 120
 
-                @Comment(CommentValue("Keep the indicator visible for this long even if hashing finishes sooner; authentication is not delayed"))
+                @Comment(CommentValue("Минимальное время показа индикатора; завершение авторизации при этом не задерживается."))
                 @JvmField var minimumDisplayMillis: Int = 2500
+                @Comment(CommentValue("Время появления title с результатом, в миллисекундах."))
                 @JvmField var resultFadeInMillis: Int = 0
 
-                @Comment(CommentValue("How long the success or failure title stays before fading out"))
+                @Comment(CommentValue("Сколько держать результат успеха или ошибки перед исчезновением."))
                 @JvmField var resultDisplayMillis: Int = 1000
+                @Comment(CommentValue("Время исчезновения title с результатом, в миллисекундах."))
                 @JvmField var resultFadeOutMillis: Int = 500
+                @Comment(CommentValue("Время появления обычного title, в миллисекундах."))
                 @JvmField var fadeInMillis: Int = 0
+                @Comment(CommentValue("Время показа обычного title, в миллисекундах."))
                 @JvmField var stayMillis: Int = 5000
+                @Comment(CommentValue("Время исчезновения обычного title, в миллисекундах."))
                 @JvmField var fadeOutMillis: Int = 0
             }
         }
@@ -300,43 +346,128 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     @NewLine
     class Limbo {
         @Comment(
-            CommentValue("Provider registered by the platform-independent LimboServerRegistry"),
-            CommentValue("Built-in provider: pico")
+            CommentValue("Провайдер встроенного limbo-сервера."),
+            CommentValue("Встроенный провайдер: pico.")
         )
         @JvmField var provider: String = "pico"
+        @Comment(CommentValue("Запускает встроенный limbo-сервер вместе с pnAuth."))
         @JvmField var enabled: Boolean = false
+        @Comment(CommentValue("Имя маршрута limbo в конфигурации прокси."))
         @JvmField var serverName: String = "auth"
+        @Comment(CommentValue("Адрес, на котором встроенный limbo принимает подключения."))
         @JvmField var host: String = "127.0.0.1"
+        @Comment(CommentValue("Порт встроенного limbo-сервера."))
         @JvmField var port: Int = 25_566
+        @Comment(CommentValue("Автоматически скачивает совместимую библиотеку PicoLimbo при отсутствии."))
         @JvmField var autoDownload: Boolean = true
+        @Comment(CommentValue("Базовый URL загрузки PicoLimbo. Изменяйте только при использовании доверенного зеркала."))
         @JvmField var downloadBaseUrl: String = LimboSettings.OFFICIAL_DOWNLOAD_BASE_URL
+        @Comment(CommentValue("SHA-256 ожидаемого файла PicoLimbo; защищает от подмены загрузки."))
         @JvmField var downloadSha256: String = LimboSettings.OFFICIAL_DOWNLOAD_SHA256
     }
 
     @NewLine
     class Paper {
-        @Comment(CommentValue("Standalone Paper/Folia behavior before authentication"))
+        @Comment(CommentValue("Ограничения автономного Paper/Folia-сервера до авторизации."))
         @JvmField var teleport: Teleport = Teleport()
         @JvmField var restrictions: Restrictions = Restrictions()
 
         class Teleport {
+            @Comment(CommentValue("Телепортирует неавторизованного игрока в указанную точку."))
             @JvmField var enabled: Boolean = false
+            @Comment(CommentValue("Название мира для точки ожидания."))
             @JvmField var world: String = "world"
+            @Comment(CommentValue("Координата X точки ожидания."))
             @JvmField var x: Double = 0.5
+            @Comment(CommentValue("Координата Y точки ожидания."))
             @JvmField var y: Double = 100.0
+            @Comment(CommentValue("Координата Z точки ожидания."))
             @JvmField var z: Double = 0.5
+            @Comment(CommentValue("Горизонтальный угол взгляда игрока."))
             @JvmField var yaw: Float = 0.0f
+            @Comment(CommentValue("Вертикальный угол взгляда игрока."))
             @JvmField var pitch: Float = 0.0f
         }
 
         class Restrictions {
+            @Comment(CommentValue("Блокирует перемещение до авторизации."))
             @JvmField var movement: Boolean = true
+            @Comment(CommentValue("Блокирует чат до авторизации."))
             @JvmField var chat: Boolean = true
+            @Comment(CommentValue("Блокирует команды, кроме разрешённых auth-команд."))
             @JvmField var commands: Boolean = true
+            @Comment(CommentValue("Блокирует взаимодействие с сущностями и блоками."))
             @JvmField var interaction: Boolean = true
+            @Comment(CommentValue("Блокирует разрушение блоков."))
             @JvmField var breaking: Boolean = true
+            @Comment(CommentValue("Блокирует установку блоков."))
             @JvmField var placing: Boolean = true
+            @Comment(CommentValue("Блокирует работу с инвентарём."))
             @JvmField var inventory: Boolean = true
+        }
+    }
+
+    @NewLine
+    class ExternalVerification {
+        @Comment(
+            CommentValue("Включает дополнительное подтверждение опасных действий через внешний мессенджер."),
+            CommentValue("После изменения на true обязательно настройте HTTPS public-url и хотя бы одного провайдера.")
+        )
+        @JvmField var enabled: Boolean = false
+
+        @Comment(
+            CommentValue("Действия, которым требуется внешнее подтверждение."),
+            CommentValue("Допустимые значения: LOGIN, REGISTER, CHANGE_PASSWORD, UNREGISTER, TOTP_DISABLE, PREMIUM_CHANGE.")
+        )
+        @JvmField var operations: List<String> = listOf("LOGIN")
+
+        @Comment(CommentValue("Сколько секунд действуют кнопки подтверждения и отклонения."))
+        @JvmField var lifetimeSeconds: Int = 300
+
+        @JvmField var callback: Callback = Callback()
+        @JvmField var discord: Discord = Discord()
+        @JvmField var telegram: Telegram = Telegram()
+        @JvmField var vk: Vk = Vk()
+
+        class Callback {
+            @Comment(CommentValue("Локальный адрес HTTP-сервера. 127.0.0.1 безопасен при использовании reverse proxy."))
+            @JvmField var host: String = "127.0.0.1"
+
+            @Comment(CommentValue("Локальный порт обработчика одноразовых ссылок."))
+            @JvmField var port: Int = 8765
+
+            @Comment(
+                CommentValue("Публичный HTTPS-адрес, направленный reverse proxy на host:port."),
+                CommentValue("Пример: https://auth.example.com")
+            )
+            @JvmField var publicUrl: String = "https://auth.example.com"
+        }
+
+        class Discord {
+            @Comment(CommentValue("Отправляет запросы подтверждения в Discord через webhook."))
+            @JvmField var enabled: Boolean = false
+            @Comment(CommentValue("URL входящего webhook Discord. Храните его в секрете."))
+            @JvmField var webhookUrl: String = ""
+        }
+
+        class Telegram {
+            @Comment(CommentValue("Отправляет запросы подтверждения через Telegram-бота."))
+            @JvmField var enabled: Boolean = false
+            @Comment(CommentValue("Токен Telegram-бота от BotFather. Храните его в секрете."))
+            @JvmField var botToken: String = ""
+            @Comment(CommentValue("ID пользователя, группы или канала, куда отправлять запросы."))
+            @JvmField var chatId: String = ""
+        }
+
+        class Vk {
+            @Comment(CommentValue("Отправляет запросы подтверждения от имени сообщества VK."))
+            @JvmField var enabled: Boolean = false
+            @Comment(CommentValue("Токен сообщества VK с правом отправки сообщений. Храните его в секрете."))
+            @JvmField var accessToken: String = ""
+            @Comment(CommentValue("peer_id получателя или беседы VK."))
+            @JvmField var peerId: String = ""
+            @Comment(CommentValue("Версия VK API."))
+            @JvmField var apiVersion: String = "5.199"
         }
     }
 

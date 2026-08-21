@@ -21,6 +21,7 @@ import ru.privatenull.pnauth.security.TotpService
 import ru.privatenull.pnauth.service.AuthService
 import ru.privatenull.pnauth.storage.AuthMigrationService
 import ru.privatenull.pnauth.storage.JdbcAuthRepository
+import ru.privatenull.pnauth.verification.ExternalVerificationService
 import java.nio.file.Path
 
 /**
@@ -45,7 +46,10 @@ class PnAuthBootstrap private constructor(
     val proxy: Proxy?
 ) : AutoCloseable {
 
+    private var externalVerification: ExternalVerificationService? = null
+
     override fun close() {
+        externalVerification?.close()
         limbo?.let { server ->
             proxy?.unregisterServerRoute(config.limbo.serverName)
             server.close()
@@ -171,6 +175,19 @@ class PnAuthBootstrap private constructor(
                 ), config.features
             )
 
+            val externalVerification = ExternalVerificationService(
+                config.externalVerification, authService.extensions(), logger
+            )
+            try {
+                externalVerification.start()
+            } catch (error: Exception) {
+                externalVerification.close()
+                authService.close()
+                limboServer?.close()
+                proxyAdapter?.unregisterServerRoute(config.limbo.serverName)
+                throw IllegalStateException("Не удалось запустить внешнее подтверждение.", error)
+            }
+
             displayAdapter?.let { authService.installDisplay(it) }
             platformAdapter?.let { authService.installPlatform(it) }
 
@@ -191,7 +208,7 @@ class PnAuthBootstrap private constructor(
                 dataFolder, logger, config, proxySettings, limboServer,
                 repository, authService, messages, bridge, migration,
                 commandService, accessService, lifecycleCoordinator, platformAdapter, proxyAdapter
-            )
+            ).also { it.externalVerification = externalVerification }
         }
     }
 }

@@ -3,6 +3,7 @@ package ru.privatenull.pnauth.config
 import ru.privatenull.pnauth.message.MessageFormat
 import ru.privatenull.pnauth.policy.AccessSettings
 import ru.privatenull.pnauth.security.HashAlgorithm
+import ru.privatenull.pnauth.extension.AuthOperation
 import java.io.IOException
 import java.nio.file.Path
 import java.time.Duration
@@ -21,13 +22,14 @@ data class AuthConfig(
     val limbo: LimboSettings,
     val paper: PaperSettings,
     val messageFormat: MessageFormat,
-    val processingTitle: ProcessingTitleSettings
+    val processingTitle: ProcessingTitleSettings,
+    val externalVerification: ExternalVerificationSettings
 ) {
     @JvmRecord
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 5
+        const val CURRENT_SCHEMA_VERSION = 6
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -58,6 +60,7 @@ data class AuthConfig(
             val ui = yaml.ui ?: PnAuthYamlConfig.Ui()
             val limbo = yaml.limbo ?: PnAuthYamlConfig.Limbo()
             val paper = yaml.paper ?: PnAuthYamlConfig.Paper()
+            val external = yaml.externalVerification ?: PnAuthYamlConfig.ExternalVerification()
             val teleport = paper.teleport ?: PnAuthYamlConfig.Paper.Teleport()
             val restrictions = paper.restrictions ?: PnAuthYamlConfig.Paper.Restrictions()
             val password = security.password ?: PnAuthYamlConfig.Security.Password()
@@ -154,7 +157,33 @@ data class AuthConfig(
                     restrictions.placing, restrictions.inventory
                 ),
                 messageFormat(yaml.messages),
-                processingTitle(processingTitle)
+                processingTitle(processingTitle),
+                externalVerification(external)
+            )
+        }
+
+        private fun externalVerification(source: PnAuthYamlConfig.ExternalVerification): ExternalVerificationSettings {
+            val operations = source.operations.map { value ->
+                try {
+                    AuthOperation.valueOf(value.trim().uppercase(Locale.ROOT))
+                } catch (error: IllegalArgumentException) {
+                    throw IllegalArgumentException("Unknown external-verification operation: $value", error)
+                }
+            }.toSet()
+            return ExternalVerificationSettings(
+                source.enabled,
+                operations,
+                Duration.ofSeconds(source.lifetimeSeconds.toLong()),
+                ExternalVerificationSettings.Callback(
+                    source.callback.host.trim(), source.callback.port, source.callback.publicUrl.trimEnd('/')
+                ),
+                ExternalVerificationSettings.Discord(source.discord.enabled, source.discord.webhookUrl.trim()),
+                ExternalVerificationSettings.Telegram(
+                    source.telegram.enabled, source.telegram.botToken.trim(), source.telegram.chatId.trim()
+                ),
+                ExternalVerificationSettings.Vk(
+                    source.vk.enabled, source.vk.accessToken.trim(), source.vk.peerId.trim(), source.vk.apiVersion.trim()
+                )
             )
         }
 

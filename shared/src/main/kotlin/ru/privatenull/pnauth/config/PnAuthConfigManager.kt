@@ -67,7 +67,8 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
             "setup-lifetime-seconds:",
             "restore-on-same-ip:",
             "processing-title:",
-            "paper:"
+            "paper:",
+            "external-verification:"
         )
 
         private fun hasRequiredSchemaKeys(file: Path): Boolean {

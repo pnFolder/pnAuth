@@ -28,7 +28,7 @@ class AuthConfigTest {
         val generated = Files.readString(directory.resolve("config.yml"))
         assertTrue(generated.contains("servers:"))
         assertTrue(generated.contains("security:"))
-        assertTrue(generated.contains("Supported values: ru, en"))
+        assertTrue(generated.contains("Поддерживаемые значения: ru, en"))
         assertTrue(generated.contains("limbo:"))
         assertTrue(generated.contains("messages:"))
         assertTrue(generated.contains("processing-title:"))
@@ -47,7 +47,7 @@ class AuthConfigTest {
 
         assertEquals("ru", created.locale)
         assertTrue(generated.contains("config-version"))
-        assertTrue(generated.contains("Schema version"))
+        assertTrue(generated.contains("Версия схемы"))
 
         Files.writeString(configFile, "locale: en\nmessages:\n  format: PLAIN\n")
         val updated = manager.load()
