@@ -215,7 +215,7 @@ java -jar pnAuth-hub-1.0.0.jar /path/to/pnauth-hub
 
 Пользовательский `custom` provider получает событие `pnauth.verification.v1`. Подписываются HTTP method, path, timestamp, nonce и SHA-256 тела. Это позволяет подключить собственный сайт, панель или бота без доступа к SQL и паролям.
 
-Полный протокол, PHP 8.2 endpoint, SQL-схема, Node.js/Express пример, nginx и production checklist: [docs/CUSTOM_VERIFICATION_RU.md](docs/CUSTOM_VERIFICATION_RU.md).
+Пошаговый старт и готовые примеры для PHP, Python, Node.js, Java/Spring и Go: [docs/custom-verification/README.md](docs/custom-verification/README.md). Полная спецификация, SQL-схема, nginx и production checklist: [docs/CUSTOM_VERIFICATION_RU.md](docs/CUSTOM_VERIFICATION_RU.md).
 
 ## Автономная авторизация на Paper/Folia
 
