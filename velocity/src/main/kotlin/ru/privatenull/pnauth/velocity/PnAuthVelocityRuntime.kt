@@ -68,11 +68,7 @@ class PnAuthVelocityRuntime private constructor(
             playerDisplay = display
 
             val pDialogs = PacketEventsPlayerDialogs(
-                Function { uniqueId -> proxy.getPlayer(uniqueId).orElse(null) },
-                java.util.function.Consumer { },
-                java.util.function.ToIntFunction { uniqueId ->
-                    proxy.getPlayer(uniqueId).map { it.protocolVersion.protocol }.orElse(0)
-                }
+                Function { uniqueId -> proxy.getPlayer(uniqueId).orElse(null) }
             )
             playerDialogs = pDialogs
 

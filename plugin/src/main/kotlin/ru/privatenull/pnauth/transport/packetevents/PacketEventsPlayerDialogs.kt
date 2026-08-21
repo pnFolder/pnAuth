@@ -10,7 +10,6 @@ import com.github.retrooper.packetevents.protocol.nbt.NBTList
 import com.github.retrooper.packetevents.protocol.nbt.NBTNumber
 import com.github.retrooper.packetevents.protocol.nbt.NBTString
 import com.github.retrooper.packetevents.protocol.packettype.PacketType
-import com.github.retrooper.packetevents.protocol.player.ClientVersion
 import com.github.retrooper.packetevents.wrapper.PacketWrapper
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCustomClickAction
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerClearDialog
@@ -35,15 +34,11 @@ import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Consumer
 import java.util.function.Function
-import java.util.function.ToIntFunction
 
 /** Complete native dialog transport shared by BungeeCord and Velocity. */
 class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val nativePlayer: Function<UUID, Any?>,
-    private val diagnostics: Consumer<String> = Consumer { },
-    private val clientProtocol: ToIntFunction<UUID> = ToIntFunction { playerId ->
-        platformProtocolVersion(nativePlayer.apply(playerId))
-    }
+    private val diagnostics: Consumer<String> = Consumer { }
 ) : ru.privatenull.pnauth.platform.adapter.PlatformDialogAdapter, AutoCloseable {
 
     private val packets = PacketEvents.getAPI()
@@ -59,17 +54,7 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
 
     override fun supported(player: Player): Boolean {
         val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
-        if (!attached(nativeValue)) return false
-        return try {
-            val userVersion = packets.protocolManager.getUser(nativeValue)?.clientVersion
-            val packetEventsSupportsDialogs = userVersion != null && userVersion != ClientVersion.UNKNOWN &&
-                userVersion.isNewerThanOrEquals(ClientVersion.V_1_21_6)
-            val platformSupportsDialogs = clientProtocol.applyAsInt(player.uniqueId()) >=
-                ClientVersion.V_1_21_6.protocolVersion
-            packetEventsSupportsDialogs || platformSupportsDialogs
-        } catch (_: RuntimeException) {
-            clientProtocol.applyAsInt(player.uniqueId()) >= ClientVersion.V_1_21_6.protocolVersion
-        }
+        return attached(nativeValue)
     }
 
     override fun show(player: Player, dialog: PlayerDialog): DialogHandle {
@@ -262,22 +247,6 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
     }
 
     companion object {
-        private fun platformProtocolVersion(player: Any?): Int {
-            if (player == null) return 0
-            return try {
-                val pendingConnection = player.javaClass.getMethod("getPendingConnection").invoke(player)
-                val version = pendingConnection.javaClass.getMethod("getVersion").invoke(pendingConnection)
-                if (version is Number) version.toInt() else 0
-            } catch (ignored: Exception) {
-                try {
-                    val protocolVersion = player.javaClass.getMethod("getProtocolVersion").invoke(player)
-                    if (protocolVersion is Number) protocolVersion.toInt() else 0
-                } catch (ignored2: Exception) {
-                    0
-                }
-            }
-        }
-
         private fun platformPlayerId(player: Any?): UUID? {
             if (player == null) return null
             return try {

@@ -19,7 +19,6 @@ import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import java.nio.file.Path
 import java.util.UUID
 import java.util.function.Function
-import java.util.function.ToIntFunction
 
 /**
  * BungeeCord runtime wiring for pnAuth.
@@ -75,11 +74,7 @@ class PnAuthBungeeRuntime private constructor(
             playerDisplay = display
 
             val dialogs = PacketEventsPlayerDialogs(
-                Function { uniqueId: UUID -> proxyServer.getPlayer(uniqueId) },
-                java.util.function.Consumer { },
-                ToIntFunction { uniqueId: UUID ->
-                    proxyServer.getPlayer(uniqueId)?.pendingConnection?.version ?: 0
-                }
+                Function { uniqueId: UUID -> proxyServer.getPlayer(uniqueId) }
             )
             playerDialogs = dialogs
 
