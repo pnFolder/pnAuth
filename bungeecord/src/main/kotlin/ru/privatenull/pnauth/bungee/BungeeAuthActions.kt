@@ -46,11 +46,6 @@ internal class BungeeAuthActions(
             .fadeOut(10)
         player.sendTitle(titleObj)
 
-        if (ru.privatenull.pnauth.dev.DevFlags.STAY_ON_AUTH_SERVER) {
-            proxy.logger.info("[pnAuth-Dev] Player ${player.name} authenticated (Dev Mode STAY_ON_AUTH_SERVER active). Remaining on auth server.")
-            return
-        }
-
         if (!settings.hasBackendServer()) return
         val target = target(player) ?: run {
             player.disconnect(BungeeMessages.component(messages.text("access.backend_missing"), messages.format()))

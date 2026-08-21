@@ -49,12 +49,6 @@ internal class VelocityAuthActions(
         )
         player.showTitle(titleObj)
 
-        if (ru.privatenull.pnauth.dev.DevFlags.STAY_ON_AUTH_SERVER) {
-            org.slf4j.LoggerFactory.getLogger("pnAuth")
-                .info("[pnAuth-Dev] Player {} authenticated (Dev Mode STAY_ON_AUTH_SERVER active). Remaining on auth server.", player.username)
-            return
-        }
-
         if (!settings.hasBackendServer()) return
         if (player.currentServer.isEmpty) return
 

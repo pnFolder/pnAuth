@@ -57,10 +57,14 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
         val nativeValue = nativePlayer.apply(player.uniqueId()) ?: return false
         if (!attached(nativeValue)) return false
         return try {
-            packets.playerManager.getClientVersion(nativeValue)
-                .isNewerThanOrEquals(ClientVersion.V_1_21_6)
+            val userVersion = packets.protocolManager.getUser(nativeValue)?.clientVersion
+            val packetEventsSupportsDialogs = userVersion != null && userVersion != ClientVersion.UNKNOWN &&
+                userVersion.isNewerThanOrEquals(ClientVersion.V_1_21_6)
+            val platformSupportsDialogs = platformProtocolVersion(nativeValue) >=
+                ClientVersion.V_1_21_6.protocolVersion
+            packetEventsSupportsDialogs || platformSupportsDialogs
         } catch (_: RuntimeException) {
-            false
+            platformProtocolVersion(nativeValue) >= ClientVersion.V_1_21_6.protocolVersion
         }
     }
 

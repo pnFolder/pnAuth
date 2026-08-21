@@ -45,6 +45,7 @@ class BungeeDialogListener internal constructor(
     private val dialogs: PlayerDialogs = platform.dialogs()
     private val captcha = ClickCaptchaService(settings.captcha)
     private val pending: MutableMap<UUID, ScheduledTask> = ConcurrentHashMap()
+    private val scheduleGenerations: MutableMap<UUID, Long> = ConcurrentHashMap()
     private val activeDialogs: MutableMap<UUID, DialogHandle> = ConcurrentHashMap()
     private val uiCommand = UiCommand()
 
@@ -72,6 +73,7 @@ class BungeeDialogListener internal constructor(
     @EventHandler
     fun onDisconnect(event: PlayerDisconnectEvent) {
         cancel(event.player.uniqueId)
+        scheduleGenerations.remove(event.player.uniqueId)
         captcha.clear(event.player.uniqueId)
         clearNativeDialog(event.player.uniqueId)
     }
@@ -149,9 +151,11 @@ class BungeeDialogListener internal constructor(
 
     private fun scheduleWhenLoaded(player: ProxiedPlayer) {
         cancel(player.uniqueId)
+        val generation = scheduleGenerations.merge(player.uniqueId, 1L, Long::plus)!!
         clearNativeDialog(player.uniqueId)
         val deadline = System.currentTimeMillis() + 30_000L
         val task = plugin.proxy.scheduler.schedule(plugin, {
+            if (scheduleGenerations[player.uniqueId] != generation) return@schedule
             if (!player.isConnected) {
                 cancel(player.uniqueId)
                 return@schedule
@@ -192,6 +196,7 @@ class BungeeDialogListener internal constructor(
     }
 
     private fun cancel(playerId: UUID) {
+        scheduleGenerations.merge(playerId, 1L, Long::plus)
         pending.remove(playerId)?.cancel()
     }
 
