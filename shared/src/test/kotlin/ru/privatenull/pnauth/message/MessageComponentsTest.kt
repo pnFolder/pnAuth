@@ -25,4 +25,13 @@ class MessageComponentsTest {
         val component = MessageComponents.deserialize("{broken", MessageFormat.JSON)
         assertEquals("{broken", plain.serialize(component))
     }
+
+    @Test
+    fun `component can be serialized to section legacy and plain text`() {
+        val component = MessageComponents.deserialize("<#12abef>Цвет <bold>жирный</bold>", MessageFormat.MINI_MESSAGE)
+        val section = MessageComponents.serializeLegacySection(component)
+
+        assertEquals(true, section.startsWith("§x§1§2§a§b§e§f"))
+        assertEquals("Цвет жирный", MessageComponents.serializePlain(component))
+    }
 }

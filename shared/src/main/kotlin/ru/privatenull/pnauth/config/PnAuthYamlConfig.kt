@@ -57,6 +57,9 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     @JvmField
     var externalVerification: ExternalVerification = ExternalVerification()
 
+    @JvmField
+    var cluster: Cluster = Cluster()
+
     @NewLine
     class Messages {
         @Comment(
@@ -428,6 +431,7 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
         @JvmField var discord: Discord = Discord()
         @JvmField var telegram: Telegram = Telegram()
         @JvmField var vk: Vk = Vk()
+        @JvmField var custom: Custom = Custom()
 
         class Callback {
             @Comment(CommentValue("Локальный адрес HTTP-сервера. 127.0.0.1 безопасен при использовании reverse proxy."))
@@ -468,6 +472,63 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
             @JvmField var peerId: String = ""
             @Comment(CommentValue("Версия VK API."))
             @JvmField var apiVersion: String = "5.199"
+        }
+
+        class Custom {
+            @Comment(CommentValue("Отправляет подписанные запросы в собственный HTTPS-сервис."))
+            @JvmField var enabled: Boolean = false
+            @Comment(CommentValue("HTTPS endpoint, принимающий событие verification.requested версии v1."))
+            @JvmField var url: String = "https://auth.example.com/integrations/pnauth"
+            @Comment(
+                CommentValue("Общий HMAC-секрет минимум из 32 символов."),
+                CommentValue("Рекомендуется: ${'$'}{ENV:PNAUTH_CUSTOM_PROVIDER_SECRET}")
+            )
+            @JvmField var secret: String = ""
+        }
+    }
+
+    @NewLine
+    class Cluster {
+        @Comment(
+            CommentValue("Режим сети: STANDALONE, SHARED_DATABASE, REDIS или HUB."),
+            CommentValue("STANDALONE подходит одному серверу; SHARED_DATABASE — небольшой сети с общей SQL-базой."),
+            CommentValue("Redis хранит только события синхронизации, но никогда не пароли и не их хеши.")
+        )
+        @JvmField var mode: String = "STANDALONE"
+
+        @Comment(CommentValue("Уникальное имя этого прокси или сервера в сети pnAuth."))
+        @JvmField var nodeId: String = "server-1"
+
+        @JvmField var redis: Redis = Redis()
+        @JvmField var hub: Hub = Hub()
+
+        class Redis {
+            @Comment(
+                CommentValue("Адрес Redis. Для удалённого подключения используйте rediss:// с TLS."),
+                CommentValue("Секрет можно взять из окружения: ${'$'}{ENV:PNAUTH_REDIS_URI}.")
+            )
+            @JvmField var uri: String = "redis://127.0.0.1:6379"
+
+            @Comment(CommentValue("Имя Redis Stream для событий pnAuth."))
+            @JvmField var stream: String = "pnauth:events"
+
+        }
+
+        class Hub {
+            @Comment(CommentValue("Публичный HTTPS-адрес центрального pnAuth Hub."))
+            @JvmField var url: String = "https://auth.example.com"
+
+            @Comment(CommentValue("Идентификатор этого узла, зарегистрированный в Hub."))
+            @JvmField var clientId: String = ""
+
+            @Comment(
+                CommentValue("Секрет узла. Рекомендуется только ссылка на переменную окружения:"),
+                CommentValue("${'$'}{ENV:PNAUTH_HUB_CLIENT_SECRET}")
+            )
+            @JvmField var clientSecret: String = ""
+
+            @Comment(CommentValue("Таймаут подключения к Hub, в миллисекундах."))
+            @JvmField var connectTimeoutMillis: Int = 5000
         }
     }
 

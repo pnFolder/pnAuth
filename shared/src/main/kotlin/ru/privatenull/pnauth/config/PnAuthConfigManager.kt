@@ -30,7 +30,7 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         try {
             if (created) yaml.save()
             else yaml.reload()
-            val legacyLimboSource = yaml.limbo != null && AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
+            val legacyLimboSource = AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
             val config = AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
             val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION || legacyLimboSource
             if (needsSchemaWrite && !created && original != null) {
@@ -68,7 +68,8 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
             "restore-on-same-ip:",
             "processing-title:",
             "paper:",
-            "external-verification:"
+            "external-verification:",
+            "cluster:"
         )
 
         private fun hasRequiredSchemaKeys(file: Path): Boolean {

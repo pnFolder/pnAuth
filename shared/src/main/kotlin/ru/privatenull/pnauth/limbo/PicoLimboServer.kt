@@ -49,7 +49,7 @@ class PicoLimboServer(
             PicoLimboConfigStore().prepareEmbedded(limboConfigDirectory.resolve("pico_limbo.toml"), host(), port())
             val api = PicoLimboLibrary.load(dataDirectory, settings)
             val token = api.get_cancellation_token()
-            if (token == null || token == Pointer.NULL) {
+            if (token == Pointer.NULL) {
                 throw IllegalStateException("Failed to obtain cancellation token for PicoLimbo")
             }
             val pool = Executors.newSingleThreadExecutor { runnable ->

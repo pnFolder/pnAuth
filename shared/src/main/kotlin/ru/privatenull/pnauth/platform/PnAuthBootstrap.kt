@@ -22,6 +22,14 @@ import ru.privatenull.pnauth.service.AuthService
 import ru.privatenull.pnauth.storage.AuthMigrationService
 import ru.privatenull.pnauth.storage.JdbcAuthRepository
 import ru.privatenull.pnauth.verification.ExternalVerificationService
+import ru.privatenull.pnauth.cluster.AuthClusterCoordinator
+import ru.privatenull.pnauth.cluster.ClusterMode
+import ru.privatenull.pnauth.cluster.DatabaseClusterTransport
+import ru.privatenull.pnauth.cluster.NoopClusterTransport
+import ru.privatenull.pnauth.cluster.RedisClusterTransport
+import ru.privatenull.pnauth.cluster.HubClusterTransport
+import ru.privatenull.pnauth.hub.HubApiClient
+import ru.privatenull.pnauth.hub.HubCredentialAuthority
 import java.nio.file.Path
 
 /**
@@ -47,8 +55,10 @@ class PnAuthBootstrap private constructor(
 ) : AutoCloseable {
 
     private var externalVerification: ExternalVerificationService? = null
+    private var clusterCoordinator: AuthClusterCoordinator? = null
 
     override fun close() {
+        clusterCoordinator?.close()
         externalVerification?.close()
         limbo?.let { server ->
             proxy?.unregisterServerRoute(config.limbo.serverName)
@@ -174,6 +184,14 @@ class PnAuthBootstrap private constructor(
                     repository, TotpKeyStore.loadOrCreate(dataFolder.resolve("totp.key"))
                 ), config.features
             )
+            var hubClient: HubApiClient? = null
+            if (config.cluster.mode == ClusterMode.HUB) {
+                hubClient = HubApiClient(config.cluster.hub)
+                val authority = HubCredentialAuthority(hubClient)
+                authService.installCredentialAuthority(authority)
+                authService.installSecondFactorAuthority(authority)
+                authService.installCentralAccountAuthority(authority)
+            }
 
             val externalVerification = ExternalVerificationService(
                 config.externalVerification, authService.extensions(), logger
@@ -186,6 +204,26 @@ class PnAuthBootstrap private constructor(
                 limboServer?.close()
                 proxyAdapter?.unregisterServerRoute(config.limbo.serverName)
                 throw IllegalStateException("Не удалось запустить внешнее подтверждение.", error)
+            }
+
+            val clusterCoordinator = try {
+                val clusterTransport = when (config.cluster.mode) {
+                    ClusterMode.STANDALONE -> NoopClusterTransport
+                    ClusterMode.SHARED_DATABASE -> DatabaseClusterTransport(
+                        config.storage.url, config.storage.username, config.storage.password, config.cluster.nodeId
+                    )
+                    ClusterMode.REDIS -> RedisClusterTransport(
+                        config.cluster.redis.uri, config.cluster.redis.stream, config.cluster.nodeId
+                    )
+                    ClusterMode.HUB -> HubClusterTransport(requireNotNull(hubClient), config.cluster.nodeId)
+                }
+                AuthClusterCoordinator(config.cluster.nodeId, authService, clusterTransport)
+            } catch (error: Exception) {
+                externalVerification.close()
+                authService.close()
+                limboServer?.close()
+                proxyAdapter?.unregisterServerRoute(config.limbo.serverName)
+                throw IllegalStateException("Не удалось запустить синхронизацию pnAuth.", error)
             }
 
             displayAdapter?.let { authService.installDisplay(it) }
@@ -208,7 +246,10 @@ class PnAuthBootstrap private constructor(
                 dataFolder, logger, config, proxySettings, limboServer,
                 repository, authService, messages, bridge, migration,
                 commandService, accessService, lifecycleCoordinator, platformAdapter, proxyAdapter
-            ).also { it.externalVerification = externalVerification }
+            ).also {
+                it.externalVerification = externalVerification
+                it.clusterCoordinator = clusterCoordinator
+            }
         }
     }
 }

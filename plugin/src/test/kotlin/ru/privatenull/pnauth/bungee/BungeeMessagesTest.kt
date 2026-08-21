@@ -19,4 +19,17 @@ class BungeeMessagesTest {
         assertEquals("/login password", components[0].clickEvent.value)
         assertNotNull(components[0].hoverEvent)
     }
+
+    @Test
+    fun preservesMiniMessageHexClickAndHoverEvents() {
+        val components = BungeeMessages.components(
+            "<#12abef><hover:show_text:'Подсказка'><click:run_command:'/status'>Открыть</click></hover>",
+            MessageFormat.MINI_MESSAGE
+        )
+
+        assertEquals("/status", components[0].clickEvent.value)
+        assertNotNull(components[0].hoverEvent)
+        // BungeeCord exposes RGB as Minecraft's native section-sign sequence.
+        assertEquals("§x§1§2§A§B§E§F", components[0].color.toString())
+    }
 }

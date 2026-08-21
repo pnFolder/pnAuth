@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 
 /**
  * Единая точка преобразования пользовательских строк в Adventure-компоненты.
@@ -18,6 +19,12 @@ object MessageComponents {
         .hexColors()
         .useUnusualXRepeatedCharacterHexFormat()
         .build()
+    private val legacySection = LegacyComponentSerializer.builder()
+        .character('§')
+        .hexColors()
+        .useUnusualXRepeatedCharacterHexFormat()
+        .build()
+    private val plain = PlainTextComponentSerializer.plainText()
 
     @JvmStatic
     fun deserialize(value: String?, format: MessageFormat?): Component {
@@ -37,4 +44,16 @@ object MessageComponents {
 
     @JvmStatic
     fun serializeJson(component: Component?): String = gson.serialize(component ?: Component.empty())
+
+    /** Строка с нативным legacy-символом Minecraft §. Hover/click в строковом формате не представимы. */
+    @JvmStatic
+    fun serializeLegacySection(component: Component?): String = legacySection.serialize(component ?: Component.empty())
+
+    /** Строка с удобным для YAML символом &, включая HEX-последовательности. */
+    @JvmStatic
+    fun serializeLegacyAmpersand(component: Component?): String = legacy.serialize(component ?: Component.empty())
+
+    /** Видимый текст без цветов и событий — для логов и внешних мессенджеров. */
+    @JvmStatic
+    fun serializePlain(component: Component?): String = plain.serialize(component ?: Component.empty())
 }

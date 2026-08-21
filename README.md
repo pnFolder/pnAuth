@@ -2,6 +2,8 @@
 
 pnAuth — плагин авторизации для прокси BungeeCord и Velocity. Один JAR поддерживает обе платформы и включает регистрацию, вход, опциональные сессии по IP, 2FA/TOTP, recovery-коды, CAPTCHA, миграции, лимиты по IP и встроенный auth-limbo.
 
+Для сетей дополнительно собирается `pnAuth-hub-<version>.jar`: центральный auth-сервис, который хранит аккаунты в своей SQL-базе, проверяет пароли/TOTP и синхронизирует узлы. Redis никогда не используется для паролей, password hash, TOTP-секретов или recovery-кодов.
+
 ## Возможности
 
 - Русский и английский интерфейс: `locale: ru` или `locale: en`.
@@ -139,6 +141,23 @@ external-verification:
     access-token: ""
     peer-id: ""
     api-version: "5.199"
+  custom:
+    enabled: false
+    url: https://auth.example.com/integrations/pnauth
+    secret: "${ENV:PNAUTH_CUSTOM_PROVIDER_SECRET}"
+
+cluster:
+  # STANDALONE, SHARED_DATABASE, REDIS или HUB
+  mode: STANDALONE
+  node-id: proxy-1
+  redis:
+    uri: "${ENV:PNAUTH_REDIS_URI}"
+    stream: pnauth:events
+  hub:
+    url: https://auth.example.com
+    client-id: proxy-1
+    client-secret: "${ENV:PNAUTH_HUB_CLIENT_SECRET}"
+    connect-timeout-millis: 5000
 ```
 
 `messages/messages_ru.yml` и `messages/messages_en.yml` создаются автоматически. Меняйте значения и оформление свободно: существующий файл никогда не перезаписывается. При обновлении отсутствующие новые ключи временно берутся из встроенного перевода, поэтому сервер остаётся рабочим без потери ваших комментариев.
@@ -176,6 +195,25 @@ database:
 4. Не публикуйте `config.yml`: webhook и токены дают доступ к отправке сообщений от ваших ботов.
 
 Если callback-сервер не может запуститься или конфигурация неполна, pnAuth завершает запуск с ошибкой вместо небезопасного обхода подтверждения.
+
+## Синхронизация сети
+
+- `STANDALONE` — один прокси/сервер и локальная база.
+- `SHARED_DATABASE` — небольшая сеть использует общую MySQL/MariaDB/PostgreSQL базу. Служебная таблица передаёт только события сброса локальных сессий.
+- `REDIS` — узлы используют общий SQL и Redis Streams как fan-out транспорт событий. Каждый узел читает поток со своей позиции; consumer group намеренно не используется, иначе событие получил бы только один прокси.
+- `HUB` — пароли, password hash, TOTP и recovery-коды находятся только в SQL-базе Hub. Прокси отправляет пароль по HTTPS в момент операции; запрос подписывается HMAC-SHA256 с timestamp и nonce. Hub никогда не возвращает hash.
+
+`REDIS` поддерживает `redis://` и `rediss://`; для удалённого Redis используйте только TLS. В событиях программно запрещены поля, содержащие `password`, `hash`, `secret`, `token`, `credential` или `recovery`.
+
+Запуск Hub:
+
+```bash
+java -jar pnAuth-hub-1.0.0.jar /path/to/pnauth-hub
+```
+
+При первом запуске создаётся документированный русский `hub.yml`. Hub рекомендуется слушать на `127.0.0.1` за HTTPS reverse proxy. Секрет каждого node указывается через переменную окружения и должен содержать минимум 32 символа.
+
+Пользовательский `custom` provider получает событие `pnauth.verification.v1`. Подписываются HTTP method, path, timestamp, nonce и SHA-256 тела. Это позволяет подключить собственный сайт, панель или бота без доступа к SQL и паролям.
 
 ## Limbo
 

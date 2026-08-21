@@ -49,9 +49,14 @@ import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.UnavailablePlatform
 import ru.privatenull.pnauth.security.IpBanStore
 import ru.privatenull.pnauth.security.PasswordHasher
+import ru.privatenull.pnauth.security.CredentialAuthority
+import ru.privatenull.pnauth.security.CredentialDecision
+import ru.privatenull.pnauth.security.SecondFactorAuthority
+import ru.privatenull.pnauth.security.CentralAccountAuthority
 import ru.privatenull.pnauth.security.TotpService
 import ru.privatenull.pnauth.storage.AuthRecord
 import ru.privatenull.pnauth.storage.AuthRepository
+import ru.privatenull.pnauth.storage.PasswordHash
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import java.time.Clock
@@ -78,6 +83,15 @@ class AuthService internal constructor(
     extensions: AuthExtensionRegistry
 ) : AuthApi {
 
+    /** Сбрасывает только локальное состояние после события другого узла, не создавая обратное cluster-событие. */
+    fun invalidateClusterSession(uniqueId: UUID) {
+        joining.remove(uniqueId)
+        sessions.remove(uniqueId)
+        failedAttempts.remove(uniqueId)
+        failedTotpAttempts.remove(uniqueId)
+        pendingTotpSetups.remove(uniqueId)
+    }
+
     private val workerThreadIndex = AtomicLong()
     private val executor = Executors.newFixedThreadPool(workerThreads()) { runnable ->
         Thread(runnable, "pnauth-worker-" + workerThreadIndex.incrementAndGet()).apply { isDaemon = true }
@@ -96,8 +110,26 @@ class AuthService internal constructor(
     private var display: PlayerDisplay = NoopPlayerDisplay()
     @Volatile
     private var platform: Platform = UnavailablePlatform()
+    @Volatile
+    private var credentialAuthority: CredentialAuthority? = null
+    @Volatile
+    private var secondFactorAuthority: SecondFactorAuthority? = null
+    @Volatile
+    private var centralAccountAuthority: CentralAccountAuthority? = null
     private val verificationDisplays: ConcurrentMap<String, List<DisplayHandle>> = ConcurrentHashMap()
     private val services: ServiceRegistry = DefaultServiceRegistry()
+
+    fun installCredentialAuthority(authority: CredentialAuthority) {
+        credentialAuthority = authority
+    }
+
+    fun installSecondFactorAuthority(authority: SecondFactorAuthority) {
+        secondFactorAuthority = authority
+    }
+
+    fun installCentralAccountAuthority(authority: CentralAccountAuthority) {
+        centralAccountAuthority = authority
+    }
 
     @JvmOverloads
     constructor(
@@ -173,12 +205,21 @@ class AuthService internal constructor(
         joining[uniqueId] = generation
         val normalizedUsername = normalizeUsername(username)
         return async {
-            var found = repository.findByUniqueId(uniqueId)
-            if (found.isEmpty && normalizedUsername.isNotEmpty()) {
+            val authority = credentialAuthority
+            var found = if (authority == null) {
+                repository.findByUniqueId(uniqueId)
+            } else {
+                val decision = authority.lookup(uniqueId, normalizedUsername).toCompletableFuture().join()
+                if (decision.status == CredentialDecision.Status.UNAVAILABLE) {
+                    throw IllegalStateException("pnAuth Hub is unavailable")
+                }
+                Optional.ofNullable(remoteRecord(uniqueId, username, decision))
+            }
+            if (authority == null && found.isEmpty && normalizedUsername.isNotEmpty()) {
                 found = repository.findByUsername(normalizedUsername)
             }
             var record = found.orElse(null)
-            if (record != null && record.username != normalizedUsername) {
+            if (authority == null && record != null && record.username != normalizedUsername) {
                 repository.updateUsername(uniqueId, normalizedUsername)
                 record = AuthRecord(
                     record.uniqueId,
@@ -211,7 +252,7 @@ class AuthService internal constructor(
                 AuthStatus.UNAUTHENTICATED
             }
 
-            if (sessionValid && loaded != null && loaded.uniqueId != uniqueId) {
+            if (sessionValid && loaded.uniqueId != uniqueId) {
                 loaded = reassignIdentity(loaded, uniqueId)
             }
             if (joining[uniqueId] != null && joining[uniqueId] == generation) {
@@ -260,6 +301,17 @@ class AuthService internal constructor(
 
             val normalizedUsername = normalizeUsername(username)
             if (!settings.isUsernameValid(normalizedUsername)) return@guarded AuthResult.INVALID_USERNAME
+            val authority = credentialAuthority
+            if (authority != null) {
+                val decision = authority.register(uniqueId, username, password, session.ip).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result != AuthResult.SUCCESS) return@guarded result
+                val record = remoteRecord(uniqueId, username, decision) ?: return@guarded AuthResult.OPERATION_DENIED
+                replaceSession(uniqueId, session, Session(session.generation, record, AuthStatus.AUTHENTICATED, session.ip))
+                eventsBus.publish(UserRegisteredEvent(uniqueId, record.realName(), session.ip ?: "", false))
+                eventsBus.publish(UserAuthenticatedEvent(uniqueId, record.realName(), UserAuthenticatedEvent.Cause.REGISTER))
+                return@guarded AuthResult.SUCCESS
+            }
             if (repository.findByUsername(normalizedUsername).isPresent) return@guarded AuthResult.USERNAME_TAKEN
 
             val now = clock.millis()
@@ -291,6 +343,19 @@ class AuthService internal constructor(
             var session = sessions[uniqueId] ?: return@async LoginPreparation(null, AuthResult.NOT_JOINED)
             val record = session.record ?: return@async LoginPreparation(null, AuthResult.NOT_REGISTERED)
             if (session.status == AuthStatus.AUTHENTICATED) return@async LoginPreparation(null, AuthResult.ALREADY_AUTHENTICATED)
+            val authority = credentialAuthority
+            if (authority != null) {
+                val decision = authority.verify(uniqueId, record.realName(), password, session.ip).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result != AuthResult.SUCCESS && result != AuthResult.TOTP_REQUIRED) {
+                    return@async LoginPreparation(null, result)
+                }
+                val remote = remoteRecord(uniqueId, record.realName(), decision) ?: return@async LoginPreparation(null, AuthResult.OPERATION_DENIED)
+                session = Session(session.generation, remote, if (result == AuthResult.TOTP_REQUIRED) AuthStatus.TOTP_PENDING else session.status, session.ip)
+                replaceSession(uniqueId, sessions[uniqueId] ?: return@async LoginPreparation(null, AuthResult.NOT_JOINED), session)
+                if (result == AuthResult.TOTP_REQUIRED) return@async LoginPreparation(null, result)
+                return@async LoginPreparation(session, null)
+            }
             val attemptKey = attemptKey(uniqueId, session)
             if (isLocked(attemptKey)) return@async LoginPreparation(null, AuthResult.LOCKED_OUT)
             if (password.length > settings.maxPasswordLength ||
@@ -345,6 +410,16 @@ class AuthService internal constructor(
         return guarded(AuthOperation.CHANGE_PASSWORD, uniqueId) {
             val session = sessions[uniqueId] ?: return@guarded AuthResult.NOT_JOINED
             if (session.status != AuthStatus.AUTHENTICATED || session.record == null) return@guarded AuthResult.NOT_AUTHENTICATED
+            val authority = credentialAuthority
+            if (authority != null) {
+                if (!settings.isPasswordValid(newPassword)) return@guarded AuthResult.INVALID_PASSWORD_FORMAT
+                val decision = authority.changePassword(uniqueId, oldPassword, newPassword).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS) {
+                    eventsBus.publish(PasswordChangedEvent(uniqueId, session.record.realName(), false))
+                }
+                return@guarded result
+            }
             if (!PasswordHasher.matches(oldPassword, session.record.passwordHash())) {
                 return@guarded AuthResult.INVALID_PASSWORD
             }
@@ -372,6 +447,16 @@ class AuthService internal constructor(
 
     override fun beginTotpSetup(uniqueId: UUID, password: String, issuer: String): CompletableFuture<TotpSetup> {
         val current = sessions[uniqueId]
+        val remote = secondFactorAuthority
+        if (remote != null) {
+            return guardedValue(
+                AuthOperationContext.user(AuthOperation.TOTP_SETUP, uniqueId, current?.record?.realName() ?: "", current?.ip)
+            ) {
+                val session = sessions[uniqueId]
+                if (session?.status != AuthStatus.AUTHENTICATED) throw IllegalStateException("Player is not authenticated")
+                remote.beginSetup(uniqueId, password, issuer).toCompletableFuture().join()
+            }
+        }
         return guardedValue(
             AuthOperationContext.user(
                 AuthOperation.TOTP_SETUP, uniqueId,
@@ -409,10 +494,25 @@ class AuthService internal constructor(
     }
 
     override fun confirmTotpSetup(uniqueId: UUID, code: String): CompletableFuture<AuthResult> {
+        val remote = secondFactorAuthority
+        if (remote != null) return guarded(AuthOperation.TOTP_VERIFY, uniqueId) {
+            val result = credentialResult(remote.confirmSetup(uniqueId, code).toCompletableFuture().join().status)
+            if (result == AuthResult.SUCCESS) AuthResult.TOTP_ENABLED else result
+        }
         return guarded(AuthOperation.TOTP_VERIFY, uniqueId) { confirmPendingTotpSetup(uniqueId, code) }
     }
 
     override fun verifyTotp(uniqueId: UUID, code: String): CompletableFuture<AuthResult> {
+        val remote = secondFactorAuthority
+        if (remote != null) {
+            return guarded(AuthOperation.TOTP_VERIFY, uniqueId) {
+                val session = sessions[uniqueId] ?: return@guarded AuthResult.NOT_JOINED
+                if (session.status != AuthStatus.TOTP_PENDING || session.record == null) return@guarded AuthResult.TOTP_NOT_ENABLED
+                val result = credentialResult(remote.verify(uniqueId, code).toCompletableFuture().join().status)
+                if (result != AuthResult.SUCCESS) return@guarded if (result == AuthResult.INVALID_PASSWORD) AuthResult.TOTP_INVALID else result
+                authenticate(uniqueId, session, UserAuthenticatedEvent.Cause.TOTP)
+            }
+        }
         if (pendingTotpSetups.containsKey(uniqueId)) return confirmTotpSetup(uniqueId, code)
         val initial = sessions[uniqueId]
         val request = AuthOperationContext(
@@ -455,6 +555,17 @@ class AuthService internal constructor(
     }
 
     override fun disableTotp(uniqueId: UUID, password: String, code: String): CompletableFuture<AuthResult> {
+        val remote = secondFactorAuthority
+        if (remote != null) return guarded(AuthOperation.TOTP_DISABLE, uniqueId) {
+            val session = sessions[uniqueId] ?: return@guarded AuthResult.NOT_JOINED
+            if (session.status != AuthStatus.AUTHENTICATED || session.record == null) return@guarded AuthResult.NOT_AUTHENTICATED
+            val result = credentialResult(remote.disable(uniqueId, password, code).toCompletableFuture().join().status)
+            if (result != AuthResult.SUCCESS) return@guarded if (result == AuthResult.INVALID_PASSWORD) AuthResult.TOTP_INVALID else result
+            val updated = session.record.withTotpSecret(null)
+            replaceSession(uniqueId, session, Session(session.generation, updated, session.status, session.ip))
+            eventsBus.publish(TotpStateChangedEvent(uniqueId, updated.realName(), false))
+            AuthResult.TOTP_DISABLED
+        }
         return guarded(AuthOperation.TOTP_DISABLE, uniqueId) {
             val session = sessions[uniqueId] ?: return@guarded AuthResult.NOT_JOINED
             if (session.record == null) return@guarded AuthResult.NOT_JOINED
@@ -493,6 +604,7 @@ class AuthService internal constructor(
     }
 
     override fun isPremium(username: String): CompletableFuture<Boolean> {
+        centralAccountAuthority?.let { return it.isPremium(username).toCompletableFuture() }
         return async {
             repository.findByUsername(normalizeUsername(username))
                 .map { it.premium() }
@@ -504,6 +616,15 @@ class AuthService internal constructor(
         return guarded(
             AuthOperationContext(AuthOperation.ADMIN_UNREGISTER, null, username, null, emptyMap())
         ) {
+            centralAccountAuthority?.let { authority ->
+                val decision = authority.adminUnregister(username).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS && decision.uniqueId != null) {
+                    invalidateClusterSession(decision.uniqueId)
+                    eventsBus.publish(UserUnregisteredEvent(decision.uniqueId, decision.username, true))
+                }
+                return@guarded result
+            }
             val record = repository.findByUsername(normalizeUsername(username)).orElse(null)
                 ?: return@guarded AuthResult.PLAYER_NOT_FOUND
             repository.deleteByUniqueId(record.uniqueId)
@@ -522,6 +643,15 @@ class AuthService internal constructor(
             val session = sessions[uniqueId] ?: return@guarded AuthResult.NOT_JOINED
             if (session.record == null) return@guarded AuthResult.NOT_JOINED
             if (session.status != AuthStatus.AUTHENTICATED) return@guarded AuthResult.NOT_AUTHENTICATED
+            centralAccountAuthority?.let { authority ->
+                val decision = authority.unregister(uniqueId, password).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS) {
+                    invalidateClusterSession(uniqueId)
+                    eventsBus.publish(UserUnregisteredEvent(uniqueId, session.record.realName, false))
+                }
+                return@guarded result
+            }
             val attemptKey = attemptKey(uniqueId, session)
             if (isLocked(attemptKey)) return@guarded AuthResult.LOCKED_OUT
             if (password.length > settings.maxPasswordLength ||
@@ -544,6 +674,14 @@ class AuthService internal constructor(
         return guarded(
             AuthOperationContext(AuthOperation.ADMIN_CHANGE_PASSWORD, null, username, null, emptyMap())
         ) {
+            centralAccountAuthority?.let { authority ->
+                val decision = authority.adminChangePassword(username, newPassword).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS && decision.uniqueId != null) {
+                    eventsBus.publish(PasswordChangedEvent(decision.uniqueId, decision.username, true))
+                }
+                return@guarded result
+            }
             val record = repository.findByUsername(normalizeUsername(username)).orElse(null)
                 ?: return@guarded AuthResult.PLAYER_NOT_FOUND
             if (!settings.isPasswordValid(newPassword)) return@guarded AuthResult.INVALID_PASSWORD_FORMAT
@@ -567,6 +705,14 @@ class AuthService internal constructor(
         return guarded(
             AuthOperationContext(AuthOperation.ADMIN_FORCE_REGISTER, null, username, null, emptyMap())
         ) {
+            centralAccountAuthority?.let { authority ->
+                val decision = authority.forceRegister(username, password).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS && decision.uniqueId != null) {
+                    eventsBus.publish(UserRegisteredEvent(decision.uniqueId, decision.username, "", true))
+                }
+                return@guarded result
+            }
             val normalizedUsername = normalizeUsername(username)
             if (!settings.isUsernameValid(normalizedUsername)) return@guarded AuthResult.INVALID_USERNAME
             if (!settings.isPasswordValid(password)) return@guarded AuthResult.INVALID_PASSWORD_FORMAT
@@ -606,6 +752,14 @@ class AuthService internal constructor(
         return guarded(
             AuthOperationContext(AuthOperation.PREMIUM_CHANGE, null, username, null, emptyMap())
         ) {
+            centralAccountAuthority?.let { authority ->
+                val decision = authority.togglePremium(username).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS && decision.uniqueId != null) {
+                    eventsBus.publish(PremiumStateChangedEvent(decision.uniqueId, decision.username, decision.premium))
+                }
+                return@guarded result
+            }
             repository.findByUsername(normalizeUsername(username))
                 .map { record ->
                     val premium = !record.premium
@@ -632,6 +786,14 @@ class AuthService internal constructor(
         return guarded(
             AuthOperationContext(AuthOperation.PREMIUM_CHANGE, uniqueId, username, session?.ip, emptyMap())
         ) {
+            centralAccountAuthority?.let { authority ->
+                val decision = authority.togglePremium(username).toCompletableFuture().join()
+                val result = credentialResult(decision.status)
+                if (result == AuthResult.SUCCESS) {
+                    eventsBus.publish(PremiumStateChangedEvent(uniqueId, username, decision.premium))
+                }
+                return@guarded result
+            }
             repository.findByUniqueId(uniqueId)
                 .map { record ->
                     val premium = !record.premium
@@ -665,6 +827,19 @@ class AuthService internal constructor(
         return extensionRegistry.evaluate(context).thenCompose { policy ->
             if (policy.type != AuthPolicyDecision.Type.ALLOW) {
                 return@thenCompose completedAdmission(username, ip, AdmissionDecision(false, false, AdmissionDecision.Reason.POLICY_DENIED))
+            }
+            val central = centralAccountAuthority
+            if (central != null) {
+                if (bans.isBanned(ip)) {
+                    return@thenCompose completedAdmission(username, ip, AdmissionDecision(false, false, AdmissionDecision.Reason.BANNED))
+                }
+                return@thenCompose central.checkAdmission(
+                    username, ip, onlineAccountsFromIp, features.maxOnlineAccountsPerIp,
+                    features.maxRegisteredAccountsPerIp, features.excludedIps.contains(ip)
+                ).thenApply { decision ->
+                    eventsBus.publish(AdmissionEvaluatedEvent(username, ip, decision))
+                    decision
+                }
             }
             async {
                 if (bans.isBanned(ip)) {
@@ -853,6 +1028,45 @@ class AuthService internal constructor(
 
     private fun replaceSession(uniqueId: UUID, expected: Session, replacement: Session) {
         sessions.replace(uniqueId, expected, replacement)
+    }
+
+    private fun remoteRecord(uniqueId: UUID, fallbackUsername: String, decision: CredentialDecision): AuthRecord? {
+        if (decision.status != CredentialDecision.Status.SUCCESS &&
+            decision.status != CredentialDecision.Status.REGISTERED &&
+            decision.status != CredentialDecision.Status.TOTP_REQUIRED
+        ) return null
+        val username = decision.username.ifBlank { fallbackUsername }
+        return AuthRecord(
+            decision.uniqueId ?: uniqueId,
+            normalizeUsername(username),
+            username,
+            PasswordHash("REMOTE", "", "", 0),
+            clock.millis(),
+            null,
+            decision.premium,
+            null,
+            null,
+            if (decision.totpEnabled) "REMOTE" else null,
+            DialogPreference.AUTO
+        )
+    }
+
+    private fun credentialResult(status: CredentialDecision.Status): AuthResult = when (status) {
+        CredentialDecision.Status.SUCCESS -> AuthResult.SUCCESS
+        CredentialDecision.Status.TOTP_REQUIRED -> AuthResult.TOTP_REQUIRED
+        CredentialDecision.Status.NOT_REGISTERED -> AuthResult.NOT_REGISTERED
+        CredentialDecision.Status.ALREADY_REGISTERED,
+        CredentialDecision.Status.REGISTERED -> AuthResult.ALREADY_REGISTERED
+        CredentialDecision.Status.INVALID_CREDENTIALS -> AuthResult.INVALID_PASSWORD
+        CredentialDecision.Status.INVALID_NEW_PASSWORD -> AuthResult.INVALID_PASSWORD_FORMAT
+        CredentialDecision.Status.LOCKED_OUT -> AuthResult.LOCKED_OUT
+        CredentialDecision.Status.TOTP_INVALID -> AuthResult.TOTP_INVALID
+        CredentialDecision.Status.TOTP_NOT_ENABLED -> AuthResult.TOTP_NOT_ENABLED
+        CredentialDecision.Status.TOTP_ALREADY_ENABLED -> AuthResult.TOTP_ALREADY_ENABLED
+        CredentialDecision.Status.TOTP_SETUP_REQUIRED -> AuthResult.TOTP_SETUP_REQUIRED
+        CredentialDecision.Status.PLAYER_NOT_FOUND -> AuthResult.PLAYER_NOT_FOUND
+        CredentialDecision.Status.INVALID_REQUEST,
+        CredentialDecision.Status.UNAVAILABLE -> AuthResult.OPERATION_DENIED
     }
 
     private fun <T> async(supplier: Supplier<T>): CompletableFuture<T> {

@@ -4,6 +4,7 @@ import ru.privatenull.pnauth.message.MessageFormat
 import ru.privatenull.pnauth.policy.AccessSettings
 import ru.privatenull.pnauth.security.HashAlgorithm
 import ru.privatenull.pnauth.extension.AuthOperation
+import ru.privatenull.pnauth.cluster.ClusterMode
 import java.io.IOException
 import java.nio.file.Path
 import java.time.Duration
@@ -23,13 +24,14 @@ data class AuthConfig(
     val paper: PaperSettings,
     val messageFormat: MessageFormat,
     val processingTitle: ProcessingTitleSettings,
-    val externalVerification: ExternalVerificationSettings
+    val externalVerification: ExternalVerificationSettings,
+    val cluster: ClusterSettings
 ) {
     @JvmRecord
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 6
+        const val CURRENT_SCHEMA_VERSION = 7
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -61,6 +63,7 @@ data class AuthConfig(
             val limbo = yaml.limbo ?: PnAuthYamlConfig.Limbo()
             val paper = yaml.paper ?: PnAuthYamlConfig.Paper()
             val external = yaml.externalVerification ?: PnAuthYamlConfig.ExternalVerification()
+            val cluster = yaml.cluster ?: PnAuthYamlConfig.Cluster()
             val teleport = paper.teleport ?: PnAuthYamlConfig.Paper.Teleport()
             val restrictions = paper.restrictions ?: PnAuthYamlConfig.Paper.Restrictions()
             val password = security.password ?: PnAuthYamlConfig.Security.Password()
@@ -105,8 +108,7 @@ data class AuthConfig(
                 ),
                 AccessSettings(
                     access.blockChat,
-                    if (access.unauthenticatedCommands == null) SetDefaults.commands()
-                    else access.unauthenticatedCommands.toSet()
+                    access.unauthenticatedCommands.toSet(),
                 ),
                 FeatureSettings(
                     premium.enabled,
@@ -118,7 +120,7 @@ data class AuthConfig(
                     Duration.ofSeconds(login.banSeconds.toLong()),
                     limits.maxOnlineAccountsPerIp,
                     limits.maxRegisteredAccountsPerIp,
-                    if (limits.excludedIps == null) emptySet() else limits.excludedIps.toSet(),
+                    limits.excludedIps.toSet(),
                     totp.enabled,
                     totp.maxAttempts,
                     Duration.ofSeconds(totp.lockoutSeconds.toLong()),
@@ -158,7 +160,27 @@ data class AuthConfig(
                 ),
                 messageFormat(yaml.messages),
                 processingTitle(processingTitle),
-                externalVerification(external)
+                externalVerification(external),
+                cluster(cluster)
+            )
+        }
+
+        private fun cluster(source: PnAuthYamlConfig.Cluster): ClusterSettings {
+            val mode = try {
+                ClusterMode.valueOf(source.mode.trim().uppercase(Locale.ROOT))
+            } catch (error: IllegalArgumentException) {
+                throw IllegalArgumentException("Unknown cluster.mode: ${source.mode}", error)
+            }
+            return ClusterSettings(
+                mode,
+                source.nodeId.trim(),
+                ClusterSettings.Redis(
+                    SecretResolver.resolve(source.redis.uri), source.redis.stream.trim()
+                ),
+                ClusterSettings.Hub(
+                    source.hub.url.trimEnd('/'), source.hub.clientId.trim(),
+                    SecretResolver.resolve(source.hub.clientSecret), source.hub.connectTimeoutMillis
+                )
             )
         }
 
@@ -183,6 +205,9 @@ data class AuthConfig(
                 ),
                 ExternalVerificationSettings.Vk(
                     source.vk.enabled, source.vk.accessToken.trim(), source.vk.peerId.trim(), source.vk.apiVersion.trim()
+                ),
+                ExternalVerificationSettings.Custom(
+                    source.custom.enabled, source.custom.url.trim(), SecretResolver.resolve(source.custom.secret)
                 )
             )
         }
@@ -246,9 +271,6 @@ data class AuthConfig(
             if (values == null) return emptyMap()
             val result = LinkedHashMap<String, String>()
             values.forEach { (key, value) ->
-                if (key == null || value == null) {
-                    throw IllegalArgumentException("servers.forced-hosts must not contain null keys or values")
-                }
                 result[key.lowercase(Locale.ROOT)] = value
             }
             return result

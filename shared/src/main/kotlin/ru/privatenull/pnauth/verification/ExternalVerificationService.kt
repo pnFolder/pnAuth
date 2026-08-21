@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
+import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
@@ -112,6 +113,43 @@ class ExternalVerificationService(
                 ))))
             )
         )
+        if (settings.custom.enabled) sendCustom(ticket, approve, deny)
+    }
+
+    private fun sendCustom(ticket: VerificationTicket, approve: String, deny: String) {
+        val body = json.writeValueAsString(
+            mapOf(
+                "schema" to "pnauth.verification.v1",
+                "event" to "verification.requested",
+                "ticketId" to ticket.id,
+                "playerId" to ticket.uniqueId?.toString(),
+                "username" to ticket.username,
+                "operation" to ticket.operation.name,
+                "message" to ticket.message,
+                "expiresAt" to ticket.expiresAt.toString(),
+                "approveUrl" to approve,
+                "denyUrl" to deny
+            )
+        )
+        val timestamp = Instant.now().epochSecond.toString()
+        val nonce = ByteArray(24).also { SecureRandom().nextBytes(it) }
+            .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
+        val digest = MessageDigest.getInstance("SHA-256").digest(body.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val canonical = "POST\n${URI.create(settings.custom.url).path}\n$timestamp\n$nonce\n$digest"
+        val mac = Mac.getInstance("HmacSHA256").apply {
+            init(SecretKeySpec(settings.custom.secret.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
+        }
+        val signature = mac.doFinal(canonical.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        post(
+            "Custom HTTP", settings.custom.url, "application/json", body,
+            mapOf(
+                "X-PnAuth-Schema" to "pnauth.verification.v1",
+                "X-PnAuth-Timestamp" to timestamp,
+                "X-PnAuth-Nonce" to nonce,
+                "X-PnAuth-Signature" to signature
+            )
+        )
     }
 
     private fun postJson(provider: String, url: String, body: Any) {
@@ -123,13 +161,16 @@ class ExternalVerificationService(
         post(provider, url, "application/x-www-form-urlencoded", body)
     }
 
-    private fun post(provider: String, url: String, contentType: String, body: String) {
+    private fun post(
+        provider: String, url: String, contentType: String, body: String,
+        headers: Map<String, String> = emptyMap()
+    ) {
         try {
-            val request = HttpRequest.newBuilder(URI.create(url))
+            val builder = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", contentType)
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build()
+            headers.forEach(builder::header)
+            val request = builder.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build()
             client.sendAsync(request, HttpResponse.BodyHandlers.discarding()).whenComplete { response, error ->
                 if (error != null) logger.warn("Не удалось отправить запрос подтверждения через $provider.", error)
                 else if (response.statusCode() !in 200..299) {
