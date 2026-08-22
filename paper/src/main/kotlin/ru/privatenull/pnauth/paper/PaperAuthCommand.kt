@@ -3,6 +3,7 @@ package ru.privatenull.pnauth.paper
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
+import org.bukkit.entity.Player
 import org.bukkit.command.TabCompleter
 import ru.privatenull.pnauth.command.CommandContext
 import ru.privatenull.pnauth.command.CommandService
@@ -22,7 +23,7 @@ internal class PaperAuthCommand(
         if (command.name.equals("auth", ignoreCase = true) && arguments.size == 1 &&
             arguments[0].equals("reload", ignoreCase = true)) {
             sender.sendMessage(
-                if (sender.hasPermission("pnauth.admin.reload")) reloadConfiguration()
+                if (sender !is Player || sender.hasPermission("pnauth.admin.reload")) reloadConfiguration()
                 else "У вас нет прав на перезагрузку pnAuth."
             )
             return true

@@ -1,6 +1,7 @@
 package ru.privatenull.pnauth.velocity
 
 import com.velocitypowered.api.command.SimpleCommand
+import com.velocitypowered.api.proxy.Player
 import ru.privatenull.pnauth.command.CommandContext
 import ru.privatenull.pnauth.command.CommandService
 import ru.privatenull.pnauth.command.CommandSpec
@@ -19,7 +20,7 @@ class AuthVelocityCommand(
         val source = invocation.source()
         if (root == "auth" && invocation.arguments().size == 1 &&
             invocation.arguments()[0].equals("reload", ignoreCase = true)) {
-            val result = if (source.hasPermission("pnauth.admin.reload")) {
+            val result = if (source !is Player || source.hasPermission("pnauth.admin.reload")) {
                 reloadConfiguration()
             } else {
                 "У вас нет прав на перезагрузку pnAuth."

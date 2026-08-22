@@ -1,6 +1,7 @@
 package ru.privatenull.pnauth.bungee
 
 import net.md_5.bungee.api.CommandSender
+import net.md_5.bungee.api.connection.ProxiedPlayer
 import net.md_5.bungee.api.plugin.Command
 import ru.privatenull.pnauth.command.CommandContext
 import ru.privatenull.pnauth.command.CommandService
@@ -18,7 +19,7 @@ class AuthBungeeCommand(
 
     override fun execute(sender: CommandSender, args: Array<out String>) {
         if (root == "auth" && args.size == 1 && args[0].equals("reload", ignoreCase = true)) {
-            if (!sender.hasPermission("pnauth.admin.reload")) {
+            if (sender is ProxiedPlayer && !sender.hasPermission("pnauth.admin.reload")) {
                 send(sender, "У вас нет прав на перезагрузку pnAuth.", messageFormat)
                 return
             }
