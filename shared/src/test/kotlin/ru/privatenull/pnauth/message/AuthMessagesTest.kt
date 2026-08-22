@@ -13,7 +13,21 @@ class AuthMessagesTest {
     @Test
     fun loadsRussianAndEnglishBundles() {
         assertTrue(AuthMessages.load("ru").text("prompt.unregistered").contains("Аккаунт"))
-        assertEquals("Authenticate first.", AuthMessages.load("en").text("access.blocked"))
+        assertTrue(AuthMessages.load("en").text("access.blocked").contains("Authenticate first."))
+    }
+
+    @Test
+    fun defaultCommandUsageIsAStyledComponentInsteadOfEscapedMarkup() {
+        val messages = AuthMessages.load("ru", MessageFormat.MINI_MESSAGE)
+        val rendered = messages.text("usage.register")
+        val component = MessageComponents.deserialize(rendered, MessageFormat.MINI_MESSAGE)
+        val plain = MessageComponents.serializePlain(component)
+        val json = MessageComponents.serializeJson(component)
+
+        assertTrue(plain.contains("pnAuth"))
+        assertTrue(plain.contains("Использование: /register"))
+        assertFalse(plain.contains("<dark_gray>"))
+        assertTrue(json.contains("gradient") || json.contains("color"))
     }
 
     @Test
@@ -106,9 +120,9 @@ class AuthMessagesTest {
         assertTrue(updated.contains("# Keep this administrator comment"))
         assertTrue(updated.contains("Custom login text"))
         assertFalse(updated.contains("register-single"))
-        assertEquals(
-            "Usage: /register <password>",
-            AuthMessages.load(directory, "en", MessageFormat.LEGACY).text("usage.register-single")
+        assertTrue(
+            AuthMessages.load(directory, "en", MessageFormat.LEGACY)
+                .text("usage.register-single").contains("Usage: /register <password>")
         )
         assertTrue(Files.exists(directory.resolve("messages_ru.yml")))
     }

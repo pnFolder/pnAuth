@@ -21,6 +21,8 @@ import ru.privatenull.pnauth.display.TitleHandle
 import ru.privatenull.pnauth.display.TitleOptions
 import ru.privatenull.pnauth.platform.PlayerResourceKey
 import ru.privatenull.pnauth.platform.adapter.PlatformDisplayAdapter
+import ru.privatenull.pnauth.message.MessageComponents
+import ru.privatenull.pnauth.message.MessageFormat
 import java.time.Duration
 import java.util.HashSet
 import java.util.Optional
@@ -29,7 +31,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Stateful Paper/Folia display implementation backed by Adventure audiences. */
-class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, AutoCloseable {
+class PaperPlayerDisplay(
+    private val plugin: Plugin,
+    private val messageFormat: MessageFormat = MessageFormat.MINI_MESSAGE
+) : PlatformDisplayAdapter, AutoCloseable {
 
     override fun showTitle(uniqueId: UUID, builder: TitleBuilder) {
         title(
@@ -204,7 +209,7 @@ class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, A
         }
 
         override fun sendNow() {
-            if (isCompletedActive && !isCompletedPaused) withPlayer { player -> player.sendActionBar(Component.text(actionText)) }
+            if (isCompletedActive && !isCompletedPaused) withPlayer { player -> player.sendActionBar(component(actionText)) }
         }
 
         override fun close() {
@@ -267,8 +272,8 @@ class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, A
                 withPlayer { player ->
                     player.showTitle(
                         Title.title(
-                            Component.text(titleText),
-                            Component.text(subtitleText),
+                            component(titleText),
+                            component(subtitleText),
                             Title.Times.times(fadeIn, stay, fadeOut)
                         )
                     )
@@ -305,7 +310,7 @@ class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, A
 
         init {
             bar = BossBar.bossBar(
-                Component.text(options.text()),
+                component(options.text()),
                 currentProgress,
                 adventureColor(options.color()),
                 adventureOverlay(options.overlay())
@@ -324,7 +329,7 @@ class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, A
         }
 
         override fun text(text: String) {
-            bar.name(Component.text(safe(text)))
+            bar.name(component(safe(text)))
         }
 
         override fun progress(progress: Float) {
@@ -408,4 +413,6 @@ class PaperPlayerDisplay(private val plugin: Plugin) : PlatformDisplayAdapter, A
         private fun adventureOverlay(value: BossBarOverlay?): BossBar.Overlay =
             BossBar.Overlay.valueOf((value ?: BossBarOverlay.PROGRESS).name)
     }
+
+    private fun component(value: String?): Component = MessageComponents.deserialize(value, messageFormat)
 }

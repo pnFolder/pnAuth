@@ -2,12 +2,12 @@ package ru.privatenull.pnauth.velocity
 
 import com.velocitypowered.api.proxy.ProxyServer
 import ru.privatenull.pnauth.command.CommandService
-import ru.privatenull.pnauth.message.MessageFormat
+import ru.privatenull.pnauth.message.AuthMessages
 
 internal class VelocityCommandRegistrar(
     private val proxy: ProxyServer,
     private val commandService: CommandService,
-    private val messageFormat: MessageFormat,
+    private val messages: AuthMessages,
     private val reloadConfiguration: () -> String
 ) : AutoCloseable {
 
@@ -21,7 +21,7 @@ internal class VelocityCommandRegistrar(
                 .build()
             commandManager.register(
                 meta,
-                AuthVelocityCommand(definition, commandService, messageFormat, reloadConfiguration)
+                AuthVelocityCommand(definition, commandService, messages, reloadConfiguration)
             )
             registered.add(definition.name)
         }

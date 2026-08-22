@@ -105,7 +105,7 @@ class PnAuthVelocityRuntime private constructor(
             dialogs = vDialogs
 
             val vCmdRegistrar = VelocityCommandRegistrar(
-                proxy, boot.commandService, config.messageFormat, ::reloadConfiguration
+                proxy, boot.commandService, boot.messages, ::reloadConfiguration
             )
             commandRegistrar = vCmdRegistrar
             vCmdRegistrar.register()
@@ -155,19 +155,19 @@ class PnAuthVelocityRuntime private constructor(
             validateBackendTargets(candidate.proxy)
             val active = bootstrap?.config
             if (active != null && candidate.limbo != active.limbo) {
-                return "Настройки встроенного limbo изменены; для их применения требуется перезапуск прокси."
+                return message("config.reload.restart-required", mapOf("section" to "limbo"))
             }
         } catch (error: Exception) {
-            return "Конфигурация pnAuth не перезагружена: ${error.message ?: "ошибка проверки"}"
+            return message("config.reload.invalid", mapOf("error" to (error.message ?: "ошибка проверки")))
         }
         return try {
             val retainedLimbo = bootstrap?.limbo
             closeForReload()
             onProxyInitialization(retainedLimbo)
-            "Конфигурация pnAuth успешно перезагружена."
+            message("config.reload.success")
         } catch (error: Exception) {
             logger.error("pnAuth reload failed", error)
-            "Не удалось применить конфигурацию pnAuth: ${error.message ?: "неизвестная ошибка"}"
+            message("config.reload.failed", mapOf("error" to (error.message ?: "неизвестная ошибка")))
         }
     }
 
@@ -192,6 +192,9 @@ class PnAuthVelocityRuntime private constructor(
     override fun proxy(): Proxy? = proxyAdapter
 
     fun proxyAdapter(): VelocityProxyAdapter? = proxyAdapter
+
+    private fun message(key: String, replacements: Map<String, String> = emptyMap()): String =
+        bootstrap?.messages?.text(key, replacements) ?: key
 
     private fun validateBackendTargets(settings: ProxySettings) {
         if (settings.hasBackendServer() && proxy.getServer(settings.backendServer).isEmpty) {

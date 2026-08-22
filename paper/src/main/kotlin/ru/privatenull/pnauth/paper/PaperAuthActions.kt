@@ -5,6 +5,7 @@ import org.bukkit.Bukkit
 import org.bukkit.plugin.Plugin
 import ru.privatenull.pnauth.command.AuthPlatformBridge
 import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.message.MessageComponents
 import java.util.UUID
 
 /** Paper/Folia side effects requested by shared authentication events. */
@@ -31,7 +32,7 @@ internal class PaperAuthActions(
         val player = Bukkit.getPlayerExact(username)
         player?.scheduler?.run(
             plugin,
-            { player.kick(Component.text(messages.text("unregister.disconnect"))) },
+            { player.kick(component(messages.text("unregister.disconnect"))) },
             null
         )
     }
@@ -39,7 +40,7 @@ internal class PaperAuthActions(
     override fun broadcast(message: String) {
         val rendered = messages.text("broadcast.message", mapOf("message" to message))
         Bukkit.getOnlinePlayers().forEach { player ->
-            player.scheduler.run(plugin, { player.sendMessage(rendered) }, null)
+            player.scheduler.run(plugin, { player.sendMessage(component(rendered)) }, null)
         }
     }
 
@@ -47,8 +48,10 @@ internal class PaperAuthActions(
         val player = Bukkit.getPlayer(uniqueId)
         player?.scheduler?.run(
             plugin,
-            { player.kick(Component.text(reason)) },
+            { player.kick(component(reason)) },
             null
         )
     }
+
+    private fun component(value: String): Component = MessageComponents.deserialize(value, messages.format)
 }

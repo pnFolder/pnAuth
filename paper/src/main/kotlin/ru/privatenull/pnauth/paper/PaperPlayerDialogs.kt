@@ -416,15 +416,22 @@ class PaperPlayerDialogs(private val plugin: Plugin) : PlatformDialogAdapter, Au
     }
 
     private fun supportsNativeDialogs(): Boolean {
-        val parts = Bukkit.getMinecraftVersion().split("\\.".toRegex()).toTypedArray()
-        if (parts.size < 2) return false
-        val minor = parts[1].toInt()
-        val patch = if (parts.size > 2) parts[2].replace("\\D.*".toRegex(), "").toInt() else 0
-        return minor > 21 || (minor == 21 && patch >= 7)
+        return supportsNativeDialogs(Bukkit.getMinecraftVersion())
     }
 
     companion object {
         private val JSON = ObjectMapper()
+
+        internal fun supportsNativeDialogs(version: String): Boolean {
+        val parts = version.split("\\.".toRegex()).toTypedArray()
+        if (parts.size < 2) return false
+        val major = parts[0].replace("\\D.*".toRegex(), "").toIntOrNull() ?: return false
+        if (major >= 26) return true
+        if (major != 1) return false
+        val minor = parts[1].toInt()
+        val patch = if (parts.size > 2) parts[2].replace("\\D.*".toRegex(), "").toInt() else 0
+        return minor > 21 || (minor == 21 && patch >= 7)
+        }
 
         private fun lower(value: String): String = value.lowercase(Locale.ROOT)
         private fun optional(target: MutableMap<String, Any>, key: String, value: Any?) {

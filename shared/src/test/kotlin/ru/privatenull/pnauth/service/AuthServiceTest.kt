@@ -346,7 +346,7 @@ class AuthServiceTest {
             ) { false }
         ).toCompletableFuture().join()
 
-        assertEquals("You do not have permission.", output[0])
+        assertTrue(output[0].contains("You do not have permission."))
     }
 
     @Test

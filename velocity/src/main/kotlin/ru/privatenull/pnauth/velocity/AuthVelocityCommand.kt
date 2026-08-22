@@ -5,12 +5,12 @@ import com.velocitypowered.api.proxy.Player
 import ru.privatenull.pnauth.command.CommandContext
 import ru.privatenull.pnauth.command.CommandService
 import ru.privatenull.pnauth.command.CommandSpec
-import ru.privatenull.pnauth.message.MessageFormat
+import ru.privatenull.pnauth.message.AuthMessages
 
 class AuthVelocityCommand(
     definition: CommandSpec,
     private val handler: CommandService,
-    private val messageFormat: MessageFormat,
+    private val messages: AuthMessages,
     private val reloadConfiguration: () -> String
 ) : SimpleCommand {
 
@@ -23,9 +23,9 @@ class AuthVelocityCommand(
             val result = if (source !is Player || source.hasPermission("pnauth.admin.reload")) {
                 reloadConfiguration()
             } else {
-                "У вас нет прав на перезагрузку pnAuth."
+                messages.text("no-permission")
             }
-            source.sendMessage(VelocityMessages.component(result, messageFormat))
+            source.sendMessage(VelocityMessages.component(result, messages.format))
             return
         }
         handler.execute(
@@ -36,7 +36,7 @@ class AuthVelocityCommand(
             )
         ).thenAccept { messages ->
             messages.forEach { message ->
-                source.sendMessage(VelocityMessages.component(message, messageFormat))
+                source.sendMessage(VelocityMessages.component(message, this.messages.format))
             }
         }
     }

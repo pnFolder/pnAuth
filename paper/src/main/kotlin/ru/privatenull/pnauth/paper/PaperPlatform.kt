@@ -12,6 +12,8 @@ import ru.privatenull.pnauth.platform.PlatformType
 import ru.privatenull.pnauth.platform.Player as PnAuthPlayer
 import ru.privatenull.pnauth.platform.TaskHandle
 import ru.privatenull.pnauth.platform.TaskRegistry
+import ru.privatenull.pnauth.message.MessageComponents
+import ru.privatenull.pnauth.message.MessageFormat
 import java.net.InetSocketAddress
 import java.time.Duration
 import java.util.Optional
@@ -22,7 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class PaperPlatform(
     private val plugin: Plugin,
     private val display: PlayerDisplay,
-    private val dialogs: PlayerDialogs
+    private val dialogs: PlayerDialogs,
+    private val messageFormat: MessageFormat
 ) : Platform {
 
     private val platformScheduler: PlatformScheduler = Scheduler()
@@ -58,13 +61,15 @@ class PaperPlatform(
         override fun display(): PlayerDisplay = display
         override fun dialogs(): PlayerDialogs = dialogs
         override fun scheduler(): PlatformScheduler = platformScheduler
-        override fun sendMessage(message: String) { delegate.sendMessage(message) }
+        override fun sendMessage(message: String) {
+            delegate.sendMessage(MessageComponents.deserialize(message, messageFormat))
+        }
         override fun sendMessage(message: net.kyori.adventure.text.Component) { delegate.sendMessage(message) }
         override fun sendMessages(messages: Iterable<net.kyori.adventure.text.Component>) {
             messages.forEach { delegate.sendMessage(it) }
         }
         override fun disconnect(reason: String) {
-            delegate.kick(net.kyori.adventure.text.Component.text(reason))
+            delegate.kick(MessageComponents.deserialize(reason, messageFormat))
         }
     }
 

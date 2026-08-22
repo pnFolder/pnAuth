@@ -31,7 +31,9 @@ object MessageFileGenerator {
             write(file, MessageCatalog.defaults(normalized))
         } else {
             val values = LinkedHashMap(read(file))
-            if (migrateDialogError(values, normalized)) {
+            val migratedDialog = migrateDialogError(values, normalized)
+            val migratedPresentation = MessageCatalog.decorateChat(values)
+            if (migratedDialog || migratedPresentation) {
                 Files.copy(file, file.resolveSibling(file.fileName.toString() + ".bak"), StandardCopyOption.REPLACE_EXISTING)
                 write(file, values)
             }
@@ -55,6 +57,7 @@ object MessageFileGenerator {
             defaultFlowStyle = DumperOptions.FlowStyle.BLOCK
             isPrettyFlow = true
             indent = 2
+            width = 4096
             defaultScalarStyle = DumperOptions.ScalarStyle.DOUBLE_QUOTED
         }
         val header = "# Сообщения pnAuth созданы из Kotlin-конфигурации и доступны для редактирования.\n" +

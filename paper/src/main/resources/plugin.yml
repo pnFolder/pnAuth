@@ -6,6 +6,8 @@ folia-supported: true
 author: privatenull
 description: Extensible authentication and player API for Paper and Folia.
 commands:
+  _pnauthui:
+    description: Internal pnAuth UI action dispatcher.
   auth:
     aliases: [pnauth]
   register:

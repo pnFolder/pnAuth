@@ -13,12 +13,14 @@ import ru.privatenull.pnauth.api.PnAuthHandle
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.PaperSettings
 import ru.privatenull.pnauth.kernel.ExtensionKernel
+import ru.privatenull.pnauth.command.CommandRegistry
 import ru.privatenull.pnauth.message.AuthMessages
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
 import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.Proxy
 import ru.privatenull.pnauth.platform.adapter.DeferredAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
+import ru.privatenull.pnauth.ui.AuthUiCoordinator
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -37,6 +39,9 @@ class PnAuthPaperRuntime private constructor(
     private var dialogs: PaperPlayerDialogs? = null
     private var paperSettings: PaperSettings? = null
     private var accessListener: PaperAccessListener? = null
+    private var uiCoordinator: AuthUiCoordinator? = null
+    private var commandRegistration: AutoCloseable? = null
+    private var runtimeMessages: AuthMessages? = null
     private val originalLocations = ConcurrentHashMap<UUID, Location>()
 
     fun onEnable() {
@@ -46,11 +51,11 @@ class PnAuthPaperRuntime private constructor(
             val config = AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
             paperSettings = config.paper
 
-            val paperDisplay = PaperPlayerDisplay(plugin)
+            val paperDisplay = PaperPlayerDisplay(plugin, config.messageFormat)
             display = paperDisplay
             val paperDialogs = PaperPlayerDialogs(plugin)
             dialogs = paperDialogs
-            val paperPlatform = PaperPlatform(plugin, paperDisplay, paperDialogs)
+            val paperPlatform = PaperPlatform(plugin, paperDisplay, paperDialogs, config.messageFormat)
             platform = paperPlatform
 
             val messages = AuthMessages.load(
@@ -72,11 +77,26 @@ class PnAuthPaperRuntime private constructor(
                 .authBridge(bridge)
                 .build()
             bootstrap = boot
+            runtimeMessages = boot.messages
 
             // Commands
-            val commandService = boot.commandService
-            val commandAdapter = PaperAuthCommand(commandService, ::reloadConfiguration)
-            commandService.definitions().forEach { definition ->
+            val commandRegistry = CommandRegistry()
+            commandRegistration = commandRegistry.register(boot.commandService)
+            val ui = AuthUiCoordinator(
+                boot.authService,
+                boot.commandService,
+                boot.messages,
+                config.features,
+                config.security.maxPasswordLength,
+                plugin.server.name,
+                paperPlatform,
+                PaperAuthUiRenderer(boot.messages),
+                commandRegistry
+            ) { }
+            uiCoordinator = ui
+
+            val commandAdapter = PaperAuthCommand(plugin, commandRegistry, boot.messages, ::reloadConfiguration)
+            commandRegistry.definitions().forEach { definition ->
                 val command = plugin.getCommand(definition.name)
                     ?: throw IllegalStateException("Missing command declaration: " + definition.name)
                 command.setExecutor(commandAdapter)
@@ -99,27 +119,41 @@ class PnAuthPaperRuntime private constructor(
         HandlerList.unregisterAll(this)
         accessListener?.let(HandlerList::unregisterAll)
         originalLocations.clear()
+        uiCoordinator?.close()
+        commandRegistration?.close()
         display?.close()
         dialogs?.close()
         bootstrap?.close()
+        uiCoordinator = null
+        commandRegistration = null
+        bootstrap = null
+        display = null
+        dialogs = null
+        platform = null
+        runtimeMessages = null
     }
 
     @Synchronized
     fun reloadConfiguration(): String {
         val dataFolder = plugin.dataFolder.toPath()
+        val messagesBeforeReload = runtimeMessages
         val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
         try {
             AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
         } catch (error: Exception) {
-            return "Конфигурация pnAuth не перезагружена: ${error.message ?: "ошибка проверки"}"
+            return messagesBeforeReload?.text(
+                "config.reload.invalid", mapOf("error" to (error.message ?: "ошибка проверки"))
+            ) ?: "Конфигурация pnAuth не перезагружена."
         }
         return try {
             close()
             onEnable()
-            "Конфигурация pnAuth успешно перезагружена."
+            requireNotNull(runtimeMessages).text("config.reload.success")
         } catch (error: Exception) {
             plugin.logger.log(java.util.logging.Level.SEVERE, "pnAuth reload failed", error)
-            "Не удалось применить конфигурацию pnAuth: ${error.message ?: "неизвестная ошибка"}"
+            (runtimeMessages ?: messagesBeforeReload)?.text(
+                "config.reload.failed", mapOf("error" to (error.message ?: "неизвестная ошибка"))
+            ) ?: "Не удалось применить конфигурацию pnAuth."
         }
     }
 
@@ -128,13 +162,25 @@ class PnAuthPaperRuntime private constructor(
         val player = event.player
         originalLocations[player.uniqueId] = player.location.clone()
         val ip = player.address?.address?.hostAddress
-        bootstrap?.authService?.onJoin(player.uniqueId, player.name, ip)
+        val coordinator = uiCoordinator
+        val renderer = PaperAuthUiRenderer(requireNotNull(bootstrap).messages)
+        bootstrap?.authService?.onJoin(player.uniqueId, player.name, ip)?.whenComplete { status, error ->
+            if (error != null || status == null || !player.isConnected) return@whenComplete
+            player.scheduler.run(plugin, {
+                if (!player.isConnected || uiCoordinator !== coordinator) return@run
+                val shown = coordinator?.show(player.uniqueId, status, player.protocolVersion) == true
+                if (!shown && status != ru.privatenull.pnauth.api.AuthStatus.AUTHENTICATED) {
+                    player.sendMessage(renderer.renderText(requireNotNull(bootstrap).messages.prompt(status)))
+                }
+            }, null)
+        }
         tryTeleport(player)
     }
 
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
         originalLocations.remove(event.player.uniqueId)
+        uiCoordinator?.clearSession(event.player.uniqueId)
         bootstrap?.authService?.onQuit(event.player.uniqueId)
     }
 

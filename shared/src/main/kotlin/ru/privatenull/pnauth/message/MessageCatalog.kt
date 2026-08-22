@@ -83,6 +83,11 @@ object MessageCatalog {
         values["subtitle.error"] = "<gradient:#FFAAAA:#FFFFFF>{error}</gradient>"
         values["title.processing"] = "VERIFYING PASSWORD..."
         values["subtitle.processing"] = "<gradient:#8b5cf6:#38bdf8>Please wait a moment...</gradient>"
+        values["config.reload.success"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <green>Configuration reloaded successfully.</green>"
+        values["config.reload.invalid"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <red>Configuration was not reloaded:</red> <gray>{error}</gray>"
+        values["config.reload.failed"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <red>Could not apply configuration:</red> <gray>{error}</gray>"
+        values["config.reload.restart-required"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <yellow>Changes in {section} require a proxy restart.</yellow>"
+        decorateChat(values)
         return values
     }
 
@@ -161,6 +166,11 @@ object MessageCatalog {
         values["subtitle.error"] = "<gradient:#FFAAAA:#FFFFFF>{error}</gradient>"
         values["title.processing"] = "ПРОВЕРКА ПАРОЛЯ..."
         values["subtitle.processing"] = "<gradient:#8b5cf6:#38bdf8>Пожалуйста, подождите...</gradient>"
+        values["config.reload.success"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <green>Конфигурация успешно перезагружена.</green>"
+        values["config.reload.invalid"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <red>Конфигурация не перезагружена:</red> <gray>{error}</gray>"
+        values["config.reload.failed"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <red>Не удалось применить конфигурацию:</red> <gray>{error}</gray>"
+        values["config.reload.restart-required"] = "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <yellow>Изменения раздела {section} требуют перезапуска прокси.</yellow>"
+        decorateChat(values)
         return values
     }
 
@@ -241,4 +251,40 @@ object MessageCatalog {
         val value = if (locale == null) "ru" else locale.trim().lowercase(Locale.ROOT)
         return if (value == "ru" || value == "en") value else "ru"
     }
+
+    /** Adds editable MiniMessage presentation to player-facing text defaults. */
+    internal fun decorateChat(values: MutableMap<String, Any>): Boolean {
+        var changed = false
+        for ((key, raw) in values.toMap()) {
+            if (raw !is String || !chatKey(key) || raw.contains("pnAuth", ignoreCase = true)) continue
+            val color = when {
+                successKey(key) -> "green"
+                errorKey(key) -> "red"
+                else -> "gray"
+            }
+            values[key] = PREFIX + " <$color>$raw</$color>"
+            changed = true
+        }
+        return changed
+    }
+
+    private fun chatKey(key: String): Boolean = key == "only-player" || key == "operation-error" ||
+        key == "no-permission" || key == "player-not-found" || key == "auth.success" ||
+        key.startsWith("usage.") || key.startsWith("prompt.") || key.startsWith("result.") ||
+        key.startsWith("status.") || key.startsWith("access.") || key.startsWith("admin.") ||
+        key.startsWith("reminder.") || key in CAPTCHA_MESSAGES || key.endsWith(".disconnect")
+
+    private fun successKey(key: String): Boolean = key.contains("success") || key.endsWith(".authenticated") ||
+        key.endsWith(".enabled") || key.endsWith(".disabled") || key.endsWith(".updated")
+
+    private fun errorKey(key: String): Boolean = key.contains("error") || key.contains("invalid") ||
+        key.contains("denied") || key.contains("locked") || key.contains("expired") ||
+        key.contains("too_many") || key == "no-permission" || key == "player-not-found"
+
+    private const val PREFIX =
+        "<dark_gray>[<gradient:#a855f7:#38bdf8><bold>pnAuth</bold></gradient>]</dark_gray>"
+
+    private val CAPTCHA_MESSAGES = setOf(
+        "captcha.prompt", "captcha.success", "captcha.invalid", "captcha.expired", "captcha.locked"
+    )
 }
