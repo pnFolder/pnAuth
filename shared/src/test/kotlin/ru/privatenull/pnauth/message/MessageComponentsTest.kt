@@ -12,7 +12,8 @@ class MessageComponentsTest {
         )
         val json = MessageComponents.serializeJson(component)
 
-        assertTrue(json.contains("/_pnauthui open"))
+        assertTrue(json.contains("pnauth:open_dialog"))
+        assertTrue(json.contains("custom"))
         assertTrue(json.contains("show_text"))
         assertTrue(json.contains("Повторить"))
     }
@@ -24,7 +25,7 @@ class MessageComponentsTest {
             MessageFormat.LEGACY
         )
 
-        assertTrue(MessageComponents.serializeJson(component).contains("/_pnauthui open"))
+        assertTrue(MessageComponents.serializeJson(component).contains("pnauth:open_dialog"))
     }
 
     @Test
@@ -35,7 +36,7 @@ class MessageComponentsTest {
                 format
             )
             val json = MessageComponents.serializeJson(component)
-            assertTrue(json.contains("/_pnauthui open"), "missing action for $format")
+            assertTrue(json.contains("pnauth:open_dialog"), "missing action for $format")
             assertTrue(json.contains("show_text"), "missing hover for $format")
         }
     }
@@ -52,5 +53,24 @@ class MessageComponentsTest {
         assertTrue(json.contains("show_text"))
         assertTrue(json.contains("Подсказка"))
         assertTrue(!json.contains("hover:show_text"))
+    }
+
+    @Test
+    fun `formatted error replacement is inserted as visible text without escaped tags`() {
+        val formattedError = "<gradient:#a855f7:#38bdf8>Неверный пароль.</gradient>"
+        val visibleError = MessageComponents.serializePlain(
+            MessageComponents.deserialize(formattedError, MessageFormat.MINI_MESSAGE)
+        )
+        val rendered = MessageRenderers.forFormat(MessageFormat.MINI_MESSAGE).render(
+            "<red>{error}</red> <auth:open_dialog>[Повторить]</auth>",
+            mapOf("error" to visibleError)
+        )
+        val json = MessageComponents.serializeJson(
+            MessageComponents.deserialize(rendered, MessageFormat.MINI_MESSAGE)
+        )
+
+        assertTrue(json.contains("Неверный пароль."))
+        assertTrue(!json.contains("gradient:#"))
+        assertTrue(json.contains("pnauth:open_dialog"))
     }
 }

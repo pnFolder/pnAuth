@@ -5,6 +5,8 @@ import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.minimessage.tag.Tag
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import net.kyori.adventure.text.event.ClickEvent
+import net.kyori.adventure.key.Key
+import net.kyori.adventure.nbt.api.BinaryTagHolder
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
@@ -19,7 +21,9 @@ object MessageComponents {
     private val authActions = TagResolver.resolver("auth") { arguments, _ ->
         val action = arguments.popOr("Для тега <auth> требуется название действия").value()
         when (action.lowercase()) {
-            "open_dialog" -> Tag.styling(ClickEvent.runCommand("/_pnauthui open"))
+            "open_dialog" -> Tag.styling(
+                ClickEvent.custom(Key.key("pnauth", "open_dialog"), BinaryTagHolder.binaryTagHolder("{}"))
+            )
             else -> throw IllegalArgumentException(
                 "Неизвестное действие pnAuth 'auth:$action'. Доступные действия: $AVAILABLE_AUTH_ACTIONS."
             )

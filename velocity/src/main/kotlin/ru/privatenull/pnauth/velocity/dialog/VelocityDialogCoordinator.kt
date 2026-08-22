@@ -17,7 +17,9 @@ import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogForm
 import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.dialog.PlayerDialogs
+import ru.privatenull.pnauth.dialog.CustomActionTransport
 import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.message.MessageComponents
 import ru.privatenull.pnauth.message.MessageFormat
 import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.Player as PnAuthPlayer
@@ -46,6 +48,14 @@ class VelocityDialogCoordinator(
     private val submissions: MutableMap<UUID, Submission> = ConcurrentHashMap()
     private val activeDialogs: MutableMap<UUID, DialogHandle> = ConcurrentHashMap()
     private val processingAnimations: MutableMap<UUID, com.velocitypowered.api.scheduler.ScheduledTask> = ConcurrentHashMap()
+    private val actionRegistration: AutoCloseable? = (dialogs as? CustomActionTransport)?.onAction(
+        "pnauth:open_dialog"
+    ) { playerId, _ ->
+        proxy.scheduler.buildTask(owner, Runnable {
+            val player = proxy.getPlayer(playerId).orElse(null)
+            if (player != null && !auth.isAuthenticated(playerId)) show(player, auth.status(playerId))
+        }).schedule()
+    }
 
     init {
         proxy.commandManager.register(
@@ -106,6 +116,7 @@ class VelocityDialogCoordinator(
         submissions.clear()
         sessions.clear()
         captcha.clearAll()
+        actionRegistration?.close()
         proxy.commandManager.unregister("_pnauthui")
     }
 
@@ -213,7 +224,9 @@ class VelocityDialogCoordinator(
 
         // Display error Title & Subtitle on screen
         val titleComp = VelocityMessages.component(messages.text("title.error"), format)
-        val subtitleComp = VelocityMessages.component(messages.text("subtitle.error", mapOf("error" to error)), format)
+        val subtitleComp = VelocityMessages.component(
+            messages.text("subtitle.error", mapOf("error" to visibleText(error))), format
+        )
         val titleObj = net.kyori.adventure.title.Title.title(
             titleComp,
             subtitleComp,
@@ -231,9 +244,13 @@ class VelocityDialogCoordinator(
         }
 
         player.sendMessage(VelocityMessages.component(
-            messages.text("dialog.error", mapOf("error" to error)), format
+            messages.text("dialog.error", mapOf("error" to visibleText(error))), format
         ))
     }
+
+    private fun visibleText(value: String): String = MessageComponents.serializePlain(
+        MessageComponents.deserialize(value, format)
+    )
 
     private fun showProcessingTitle(player: Player) {
         stopProcessingTitle(player.uniqueId)

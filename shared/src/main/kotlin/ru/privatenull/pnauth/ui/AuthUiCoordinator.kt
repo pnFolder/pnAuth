@@ -12,17 +12,26 @@ import ru.privatenull.pnauth.command.CommandRegistry
 import ru.privatenull.pnauth.command.CommandService
 import ru.privatenull.pnauth.command.CommandSpec
 import ru.privatenull.pnauth.config.FeatureSettings
+import ru.privatenull.pnauth.config.ProcessingTitleSettings
+import ru.privatenull.pnauth.dialog.CustomActionTransport
 import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.message.MessageComponents
+import ru.privatenull.pnauth.display.ProcessingTitleAnimation
+import ru.privatenull.pnauth.display.TitleHandle
+import ru.privatenull.pnauth.display.TitleOptions
 import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.platform.Player
+import ru.privatenull.pnauth.platform.TaskHandle
 import ru.privatenull.pnauth.security.ClickCaptchaService
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Consumer
+import java.util.function.BiConsumer
+import java.time.Duration
 
 /**
  * Owns the complete platform-independent authentication UI lifecycle.
@@ -33,6 +42,7 @@ class AuthUiCoordinator(
     private val commands: AuthCommandService,
     private val messages: AuthMessages,
     private val features: FeatureSettings,
+    private val processingTitle: ProcessingTitleSettings,
     private val maxPasswordLength: Int,
     private val authServer: String,
     private val platform: Platform,
@@ -48,6 +58,10 @@ class AuthUiCoordinator(
     private val protocols = ConcurrentHashMap<UUID, Int>()
     private val commandService: CommandService = UiCommandService()
     private val commandRegistration: AutoCloseable = commandRegistry.register(commandService)
+    private val actionRegistration: AutoCloseable? = (platform.dialogs() as? CustomActionTransport)?.onAction(
+        OPEN_DIALOG_ACTION,
+        BiConsumer { playerId, _ -> dispatchOpenAction(playerId) }
+    )
 
     /** Returns false when the adapter should display the command fallback. */
     fun show(playerId: UUID, status: AuthStatus, protocol: Int): Boolean {
@@ -125,7 +139,9 @@ class AuthUiCoordinator(
     fun clearSession(playerId: UUID) {
         val removed = sessions.remove(playerId)
         val submission = submissions[playerId]
-        if (submission != null && submission.session == removed) submissions.remove(playerId, submission)
+        if (submission != null && submission.session == removed && submissions.remove(playerId, submission)) {
+            submission.feedback?.close()
+        }
         captcha.clear(playerId)
         protocols.remove(playerId)
         clear(playerId)
@@ -134,12 +150,14 @@ class AuthUiCoordinator(
     override fun close() {
         dialogs.values.forEach { it.close() }
         dialogs.clear()
+        submissions.values.forEach { it.feedback?.close() }
         submissions.clear()
         sessions.clear()
         captcha.clearAll()
         protocols.clear()
         try {
             commandRegistration.close()
+            actionRegistration?.close()
         } catch (exception: Exception) {
             throw IllegalStateException("Could not unregister authentication UI commands", exception)
         }
@@ -193,13 +211,14 @@ class AuthUiCoordinator(
             sendCaptcha(player)
             return
         }
-        val submission = Submission(session)
+        val submission = Submission(session, command, startProcessing(player))
         if (submissions.putIfAbsent(playerId, submission) != null) return
         val current = auth.status(playerId)
         if ((command == "register" && current != AuthStatus.UNREGISTERED)
             || (command == "login" && current != AuthStatus.UNAUTHENTICATED)
         ) {
             submissions.remove(playerId, submission)
+            submission.feedback?.close()
             showNotice(playerId, messages.prompt(current))
             return
         }
@@ -241,7 +260,13 @@ class AuthUiCoordinator(
             return
         }
         try {
-            current.scheduler().execute(current, completion)
+            val remaining = submission.feedback?.remaining(processingTitle.timings.minimumDisplay)
+                ?: Duration.ZERO
+            if (remaining.isZero || remaining.isNegative) {
+                current.scheduler().execute(current, completion)
+            } else {
+                current.scheduler().delayed(current, remaining, completion)
+            }
         } catch (schedulingFailure: RuntimeException) {
             diagnostics.accept("[auth-ui] Platform executor rejected result delivery; running immediately")
             completion.run()
@@ -263,15 +288,18 @@ class AuthUiCoordinator(
                 return
             }
             if (error != null) {
+                completeProcessing(player, submission, false, messages.text("operation-error"))
                 diagnostics.accept("[auth-ui] Delivering operation-error to $playerId")
                 closeWithError(playerId, messages.text("operation-error"))
             } else if (auth.isAuthenticated(playerId)) {
                 clear(playerId)
                 val success = if (output.isNullOrEmpty()) messages.text("auth.success") else output[0]
+                completeProcessing(player, submission, true, success)
                 player.sendMessage(renderer.renderText(success))
                 diagnostics.accept("[auth-ui] Delivered successful authentication result to $playerId")
             } else {
                 val notice = if (output.isNullOrEmpty()) messages.prompt(auth.status(playerId)) else output[0]
+                completeProcessing(player, submission, false, notice)
                 val next = auth.status(playerId)
                 if (passwordStage(next)) closeWithError(playerId, notice)
                 else {
@@ -307,7 +335,7 @@ class AuthUiCoordinator(
             showNotice(playerId, error)
             return
         }
-        player.sendMessage(renderer.render("dialog.error", mapOf("error" to error)))
+        player.sendMessage(renderer.render("dialog.error", mapOf("error" to visibleText(error))))
     }
 
     private fun sendCaptcha(player: Player) {
@@ -324,11 +352,72 @@ class AuthUiCoordinator(
         player.sendMessage(options)
     }
 
+    private fun dispatchOpenAction(playerId: UUID) {
+        val player = player(playerId) ?: return
+        player.scheduler().execute(player, Runnable {
+            if (!auth.isAuthenticated(playerId)) {
+                show(playerId, auth.status(playerId), protocols.getOrDefault(playerId, Int.MAX_VALUE))
+            }
+        })
+    }
+
+    private fun startProcessing(player: Player): ProcessingFeedback? {
+        if (!processingTitle.enabled) return null
+        val frames = ProcessingTitleAnimation.generateFrames(
+            messages.text("title.processing"), processingTitle.animation
+        )
+        if (frames.isEmpty()) return null
+        val timings = processingTitle.timings
+        val title = player.display().title(
+            player.uniqueId(), PROCESSING_TITLE_ID,
+            TitleOptions(
+                frames[0], messages.text("subtitle.processing"),
+                timings.fadeIn, timings.stay, timings.fadeOut, Duration.ZERO, Duration.ZERO
+            )
+        )
+        if (frames.size == 1) return ProcessingFeedback(title, null)
+        var frame = 0
+        val animation = player.scheduler().repeating(
+            player, timings.frameInterval, timings.frameInterval,
+            Runnable {
+                frame = (frame + 1) % frames.size
+                title.title(frames[frame])
+            }
+        )
+        return ProcessingFeedback(title, animation)
+    }
+
+    private fun completeProcessing(player: Player, submission: Submission, success: Boolean, detail: String) {
+        val feedback = submission.feedback ?: return
+        feedback.release()
+        val timings = processingTitle.timings
+        val titleKey = if (success) {
+            if (submission.command == "register") "title.register.success" else "title.login.success"
+        } else "title.error"
+        val subtitleKey = if (success) {
+            if (submission.command == "register") "subtitle.register.success" else "subtitle.login.success"
+        } else "subtitle.error"
+        val subtitle = if (success) messages.text(subtitleKey)
+        else messages.text(subtitleKey, mapOf("error" to visibleText(detail)))
+        player.display().title(
+            player.uniqueId(), PROCESSING_TITLE_ID,
+            TitleOptions(
+                messages.text(titleKey), subtitle,
+                timings.resultFadeIn, timings.resultDisplay, timings.resultFadeOut,
+                Duration.ZERO, timings.resultFadeIn.plus(timings.resultDisplay).plus(timings.resultFadeOut)
+            )
+        )
+    }
+
     private fun requiresCaptcha(playerId: UUID): Boolean {
         val player = player(playerId)
         return player != null && onAuthServer(player) && !captcha.verified(playerId)
                 && !auth.isAuthenticated(playerId) && passwordStage(auth.status(playerId))
     }
+
+    private fun visibleText(value: String): String = MessageComponents.serializePlain(
+        MessageComponents.deserialize(value, messages.format)
+    )
 
     private fun player(playerId: UUID): Player? = platform.player(playerId).orElse(null)
     private fun onAuthServer(player: Player): Boolean {
@@ -337,7 +426,32 @@ class AuthUiCoordinator(
     }
 
     private class Session
-    private class Submission(val session: Session)
+    private class Submission(
+        val session: Session,
+        val command: String,
+        val feedback: ProcessingFeedback?
+    )
+
+    private class ProcessingFeedback(
+        private val title: TitleHandle,
+        private val animation: TaskHandle?,
+        private val startedAtNanos: Long = System.nanoTime()
+    ) {
+        fun remaining(minimum: Duration): Duration {
+            val elapsed = Duration.ofNanos((System.nanoTime() - startedAtNanos).coerceAtLeast(0L))
+            return minimum.minus(elapsed).let { if (it.isNegative) Duration.ZERO else it }
+        }
+
+        fun release() {
+            animation?.cancel()
+            title.release()
+        }
+
+        fun close() {
+            animation?.cancel()
+            title.close()
+        }
+    }
 
     private inner class UiCommandService : CommandService {
         override fun definitions(): List<CommandSpec> {
@@ -357,6 +471,8 @@ class AuthUiCoordinator(
 
     companion object {
         private const val UI_COMMAND = "/_pnauthui"
+        private const val OPEN_DIALOG_ACTION = "pnauth:open_dialog"
+        private const val PROCESSING_TITLE_ID = "pnauth:password-result"
         private fun passwordStage(status: AuthStatus): Boolean {
             return status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED
         }

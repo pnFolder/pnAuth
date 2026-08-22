@@ -23,7 +23,9 @@ import ru.privatenull.pnauth.config.ProcessingTitleSettings
 import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.dialog.PlayerDialogs
+import ru.privatenull.pnauth.dialog.CustomActionTransport
 import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.message.MessageComponents
 import ru.privatenull.pnauth.platform.Platform
 import ru.privatenull.pnauth.security.ClickCaptchaService
 import java.util.UUID
@@ -51,6 +53,19 @@ class BungeeDialogListener internal constructor(
     private val activeDialogs: MutableMap<UUID, DialogHandle> = ConcurrentHashMap()
     private val processingAnimations: MutableMap<UUID, ScheduledTask> = ConcurrentHashMap()
     private val uiCommand = UiCommand()
+    private val actionRegistration: AutoCloseable? = (dialogs as? CustomActionTransport)?.onAction(
+        "pnauth:open_dialog"
+    ) { playerId, _ ->
+        plugin.proxy.scheduler.runAsync(plugin) {
+            val player = plugin.proxy.getPlayer(playerId) ?: return@runAsync
+            if (!auth.isAuthenticated(playerId)) {
+                val status = auth.status(playerId)
+                if (status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED) {
+                    show(player, status == AuthStatus.UNREGISTERED)
+                }
+            }
+        }
+    }
 
     init {
         plugin.proxy.pluginManager.registerCommand(plugin, uiCommand)
@@ -97,6 +112,7 @@ class BungeeDialogListener internal constructor(
         processingAnimations.values.forEach { it.cancel() }
         processingAnimations.clear()
         captcha.clearAll()
+        actionRegistration?.close()
         plugin.proxy.pluginManager.unregisterCommand(uiCommand)
     }
 
@@ -263,7 +279,9 @@ class BungeeDialogListener internal constructor(
 
         // Display error Title & Subtitle on screen via native BungeeComponentAdapter
         val titleComp = BungeeMessages.component(messages.text("title.error"), messages.format)
-        val subtitleComp = BungeeMessages.component(messages.text("subtitle.error", mapOf("error" to error)), messages.format)
+        val subtitleComp = BungeeMessages.component(
+            messages.text("subtitle.error", mapOf("error" to visibleText(error))), messages.format
+        )
         val titleObj = plugin.proxy.createTitle()
             .title(titleComp)
             .subTitle(subtitleComp)
@@ -281,9 +299,13 @@ class BungeeDialogListener internal constructor(
         }
 
         player.sendMessage(*BungeeMessages.components(
-            messages.text("dialog.error", mapOf("error" to error)), messages.format
+            messages.text("dialog.error", mapOf("error" to visibleText(error))), messages.format
         ))
     }
+
+    private fun visibleText(value: String): String = MessageComponents.serializePlain(
+        MessageComponents.deserialize(value, messages.format)
+    )
 
     private fun showProcessingTitle(player: ProxiedPlayer) {
         stopProcessingTitle(player.uniqueId)

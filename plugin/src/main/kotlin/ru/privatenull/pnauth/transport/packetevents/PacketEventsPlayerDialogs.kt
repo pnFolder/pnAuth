@@ -21,6 +21,7 @@ import ru.privatenull.pnauth.dialog.DialogLayout
 import ru.privatenull.pnauth.dialog.DialogResponse
 import ru.privatenull.pnauth.dialog.DialogSubscription
 import ru.privatenull.pnauth.dialog.DialogType
+import ru.privatenull.pnauth.dialog.CustomActionTransport
 import ru.privatenull.pnauth.dialog.PlayerDialog
 import ru.privatenull.pnauth.dialog.PlayerDialogs
 import ru.privatenull.pnauth.platform.Player
@@ -33,17 +34,19 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Consumer
+import java.util.function.BiConsumer
 import java.util.function.Function
 
 /** Complete native dialog transport shared by BungeeCord, Velocity and Paper/Folia. */
 class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val nativePlayer: Function<UUID, Any?>,
     private val diagnostics: Consumer<String> = Consumer { }
-) : ru.privatenull.pnauth.platform.adapter.PlatformDialogAdapter, AutoCloseable {
+) : ru.privatenull.pnauth.platform.adapter.PlatformDialogAdapter, CustomActionTransport, AutoCloseable {
 
     private val packets = PacketEvents.getAPI()
     private val handles: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()
     private val actions: ConcurrentMap<PlayerResourceKey, Handle> = ConcurrentHashMap()
+    private val customActions: ConcurrentMap<String, BiConsumer<UUID, Map<String, Any>>> = ConcurrentHashMap()
     private val listener: PacketListenerCommon
     init {
         if (!packets.isLoaded || packets.isTerminated) {
@@ -93,7 +96,14 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
         handles.values.forEach { it.close() }
         handles.clear()
         actions.clear()
+        customActions.clear()
         if (!packets.isTerminated) packets.eventManager.unregisterListener(listener)
+    }
+
+    override fun onAction(actionId: String, handler: BiConsumer<UUID, Map<String, Any>>): AutoCloseable {
+        require(actionId.startsWith("pnauth:")) { "pnAuth custom action IDs must use the pnauth namespace" }
+        check(customActions.putIfAbsent(actionId, handler) == null) { "Custom action is already registered: $actionId" }
+        return AutoCloseable { customActions.remove(actionId, handler) }
     }
 
     private inner class Handle(
@@ -221,6 +231,12 @@ class PacketEventsPlayerDialogs @JvmOverloads constructor(
                 var handle = if (playerId == null) null else actions[PlayerResourceKey(playerId, actionId)]
                 if (handle == null) handle = actionForConnection(actionId, event)
                 if (handle == null) {
+                    val custom = customActions[actionId]
+                    if (custom != null && playerId != null) {
+                        event.isCancelled = true
+                        custom.accept(playerId, payload)
+                        return
+                    }
                     diagnostics.accept("[dialogs] Rejected an unmatched pnAuth action $actionId")
                     return
                 }

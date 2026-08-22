@@ -91,6 +91,7 @@ class PnAuthPaperRuntime private constructor(
                 boot.commandService,
                 boot.messages,
                 config.features,
+                config.processingTitle,
                 config.security.maxPasswordLength,
                 plugin.server.name,
                 paperPlatform,
