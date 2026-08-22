@@ -4,6 +4,8 @@ import net.kyori.adventure.text.Component
 import net.md_5.bungee.api.CommandSender
 import net.md_5.bungee.api.chat.BaseComponent
 import net.md_5.bungee.api.chat.ClickEvent
+import net.md_5.bungee.api.chat.HoverEvent
+import net.md_5.bungee.api.chat.hover.content.Text
 import net.md_5.bungee.api.connection.ProxiedPlayer
 import net.md_5.bungee.api.event.PlayerDisconnectEvent
 import net.md_5.bungee.api.event.PostLoginEvent
@@ -120,14 +122,14 @@ class BungeeDialogListener internal constructor(
         }
     }
 
-    private fun show(player: ProxiedPlayer, register: Boolean) {
+    private fun show(player: ProxiedPlayer, register: Boolean, notice: Component? = null) {
         val command = if (register) "register" else "login"
         val pnPlayer = platform.player(player.uniqueId)
             .orElseThrow { IllegalStateException("Player left before the dialog was shown") }
         val content = AuthDialogFormFactory.Content(
             dialogComponent(if (register) "dialog.register.title" else "dialog.login.title"),
             dialogComponent(if (register) "dialog.register.description" else "dialog.login.description"),
-            null,
+            notice,
             dialogComponent(if (register) "dialog.register.password" else "dialog.login.password"),
             if (register) dialogComponent("dialog.register.repeat") else null,
             dialogComponent(if (register) "dialog.register.button" else "dialog.login.button")
@@ -272,12 +274,22 @@ class BungeeDialogListener internal constructor(
             .fadeOut(10)
         player.sendTitle(titleObj)
 
+        if (settings.dialogs.reopenOnFailure && isOnAuthServer(player)) {
+            val status = auth.status(player.uniqueId)
+            if (status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED) {
+                show(player, status == AuthStatus.UNREGISTERED, BungeeMessages.adventureComponent(error, messages.format))
+                return
+            }
+        }
+
         val line = mutableListOf<BaseComponent>()
         line.addAll(BungeeMessages.components(messages.text("dialog.error", mapOf("error" to error)), messages.format).toList())
         line.add(net.md_5.bungee.api.chat.TextComponent(" "))
         val retry = BungeeMessages.components(messages.text("dialog.retry"), messages.format)
+        val retryHover = BungeeMessages.components(messages.text("dialog.retry_hover"), messages.format)
         for (part in retry) {
             part.clickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/_pnauthui open")
+            part.hoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, Text(retryHover))
             line.add(part)
         }
         player.sendMessage(*line.toTypedArray())

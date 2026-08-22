@@ -68,7 +68,7 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
             CommentValue("Он применяется к встроенному переводу и файлу messages_<locale>.yml.")
         )
         @JvmField
-        var format: MessageFormat = MessageFormat.LEGACY
+        var format: MessageFormat = MessageFormat.MINI_MESSAGE
     }
 
     @NewLine
@@ -306,6 +306,11 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
             @JvmField var allowPlayerPreference: Boolean = true
             @Comment(CommentValue("Минимальный protocol ID клиента, которому можно отправлять native dialog."))
             @JvmField var minClientProtocol: Int = 771
+            @Comment(
+                CommentValue("Что делать после неверного пароля:"),
+                CommentValue("true — сразу снова открыть форму с ошибкой; false — показать в чате настраиваемую кнопку dialog.retry.")
+            )
+            @JvmField var reopenOnFailure: Boolean = false
         }
 
         class ProcessingTitle {
@@ -316,12 +321,12 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
 
             class Animation {
                 @Comment(CommentValue("Тип анимации: NONE, GRADIENT или FRAMES."))
-                @JvmField var type: String = "FRAMES"
+                @JvmField var type: String = "GRADIENT"
                 @Comment(CommentValue("Цвета градиента в формате #RRGGBB; можно указать два и более цвета."))
-                @JvmField var colors: List<String> = listOf("#d8b4fe", "#f0abfc", "#c4b5fd")
+                @JvmField var colors: List<String> = listOf("#8b5cf6", "#c084fc", "#38bdf8")
 
                 @Comment(CommentValue("Количество кадров в одном бесшовном цикле градиента."))
-                @JvmField var frameCount: Int = 12
+                @JvmField var frameCount: Int = 18
 
                 @Comment(
                     CommentValue("Пользовательские кадры для типа FRAMES; каждый элемент — отдельный MiniMessage-текст."),
@@ -336,7 +341,7 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
 
             class Timings {
                 @Comment(CommentValue("Пауза между кадрами анимации, в игровых тиках; 20 тиков = 1 секунда."))
-                @JvmField var frameIntervalTicks: Int = 3
+                @JvmField var frameIntervalTicks: Int = 4
 
                 @Comment(CommentValue("Минимальное время показа индикатора; завершение авторизации при этом не задерживается."))
                 @JvmField var minimumDisplayMillis: Int = 2500

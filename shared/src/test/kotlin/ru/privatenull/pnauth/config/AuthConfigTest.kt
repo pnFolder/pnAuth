@@ -32,11 +32,12 @@ class AuthConfigTest {
         assertTrue(generated.contains("limbo:"))
         assertTrue(generated.contains("messages:"))
         assertTrue(generated.contains("processing-title:"))
-        assertEquals(ProcessingTitleSettings.Type.FRAMES, config.processingTitle.animation.type)
-        assertEquals(12, config.processingTitle.animation.frameCount)
-        assertTrue(config.processingTitle.animation.frames.isNotEmpty())
-        assertEquals(150L, config.processingTitle.timings.frameInterval.toMillis())
-        assertEquals(MessageFormat.LEGACY, config.messageFormat)
+        assertTrue(generated.contains("reopen-on-failure:"))
+        assertEquals(ProcessingTitleSettings.Type.GRADIENT, config.processingTitle.animation.type)
+        assertEquals(18, config.processingTitle.animation.frameCount)
+        assertEquals(200L, config.processingTitle.timings.frameInterval.toMillis())
+        assertFalse(config.features.dialogs.reopenOnFailure)
+        assertEquals(MessageFormat.MINI_MESSAGE, config.messageFormat)
     }
 
     @Test

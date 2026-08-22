@@ -15,8 +15,8 @@ class MessageFormatSerializer : ClassSerializer<MessageFormat, String>(
     } catch (_: IllegalArgumentException) {
         System.err.println(
             "[pnAuth] Некорректное значение messages.format: '$value'. " +
-                "Используется безопасное значение LEGACY. Допустимо: LEGACY, MINI_MESSAGE, JSON, PLAIN."
+                "Используется безопасное значение MINI_MESSAGE. Допустимо: LEGACY, MINI_MESSAGE, JSON, PLAIN."
         )
-        MessageFormat.LEGACY
+        MessageFormat.MINI_MESSAGE
     }
 }

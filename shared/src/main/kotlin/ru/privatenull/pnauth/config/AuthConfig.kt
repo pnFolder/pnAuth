@@ -31,7 +31,7 @@ data class AuthConfig(
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 9
+        const val CURRENT_SCHEMA_VERSION = 10
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -133,7 +133,8 @@ data class AuthConfig(
                         dialogs.enabled,
                         dialogs.fallbackToCommands,
                         dialogs.allowPlayerPreference,
-                        dialogs.minClientProtocol
+                        dialogs.minClientProtocol,
+                        dialogs.reopenOnFailure
                     ),
                     CaptchaSettings(
                         captcha.enabled,

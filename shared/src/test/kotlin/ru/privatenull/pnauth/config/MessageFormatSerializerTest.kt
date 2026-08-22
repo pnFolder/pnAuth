@@ -14,8 +14,8 @@ class MessageFormatSerializerTest {
     }
 
     @Test
-    fun `falls back to legacy for an invalid value`() {
-        assertEquals(MessageFormat.LEGACY, serializer.deserialize("something-broken"))
+    fun `falls back to the safe default for an invalid value`() {
+        assertEquals(MessageFormat.MINI_MESSAGE, serializer.deserialize("something-broken"))
     }
 
     @Test

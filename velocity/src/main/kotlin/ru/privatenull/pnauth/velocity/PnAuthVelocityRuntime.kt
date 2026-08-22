@@ -45,7 +45,7 @@ class PnAuthVelocityRuntime private constructor(
     private var platform: VelocityPlatform? = null
     private var proxyAdapter: VelocityProxyAdapter? = null
 
-    fun onProxyInitialization() {
+    fun onProxyInitialization(retainedLimbo: ru.privatenull.pnauth.limbo.LimboServer? = null) {
         try {
             val dependency = PacketEventsBootstrap.ensure(
                 PacketEventsBootstrap.Platform.VELOCITY,
@@ -89,6 +89,7 @@ class PnAuthVelocityRuntime private constructor(
                 .dialogs(pDialogs)
                 .proxy(proxyFacade)
                 .authBridge(bridge)
+                .retainedLimbo(retainedLimbo)
                 .build()
             bootstrap = boot
 
@@ -152,17 +153,33 @@ class PnAuthVelocityRuntime private constructor(
         try {
             val candidate = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
             validateBackendTargets(candidate.proxy)
+            val active = bootstrap?.config
+            if (active != null && candidate.limbo != active.limbo) {
+                return "Настройки встроенного limbo изменены; для их применения требуется перезапуск прокси."
+            }
         } catch (error: Exception) {
             return "Конфигурация pnAuth не перезагружена: ${error.message ?: "ошибка проверки"}"
         }
         return try {
-            close()
-            onProxyInitialization()
+            val retainedLimbo = bootstrap?.limbo
+            closeForReload()
+            onProxyInitialization(retainedLimbo)
             "Конфигурация pnAuth успешно перезагружена."
         } catch (error: Exception) {
             logger.error("pnAuth reload failed", error)
             "Не удалось применить конфигурацию pnAuth: ${error.message ?: "неизвестная ошибка"}"
         }
+    }
+
+    private fun closeForReload() {
+        authListener?.let { proxy.eventManager.unregisterListener(owner, it) }
+        authTasks?.let { proxy.eventManager.unregisterListener(owner, it) }
+        bootstrap?.closeForReload()
+        playerDisplay?.close()
+        commandRegistrar?.close()
+        authTasks?.close()
+        dialogs?.close()
+        playerDialogs?.close()
     }
 
     override fun api(): AuthApi = bootstrap?.authService

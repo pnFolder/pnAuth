@@ -225,6 +225,11 @@ class VelocityDialogCoordinator(
         )
         player.showTitle(titleObj)
 
+        if (features.dialogs.reopenOnFailure) {
+            showNotice(player, error)
+            return
+        }
+
         player.sendMessage(
             VelocityMessages.component(messages.text("dialog.error", mapOf("error" to error)), format)
                 .append(Component.space()).append(

@@ -12,8 +12,8 @@ data class ProcessingTitleSettings @JvmOverloads constructor(
     @JvmRecord
     data class Animation @JvmOverloads constructor(
         val type: Type = Type.GRADIENT,
-        val colors: List<String> = emptyList(),
-        val frameCount: Int = 12,
+        val colors: List<String> = listOf("#8b5cf6", "#c084fc", "#38bdf8"),
+        val frameCount: Int = 18,
         val frames: List<String> = emptyList()
     ) {
         init {
@@ -28,16 +28,7 @@ data class ProcessingTitleSettings @JvmOverloads constructor(
 
         companion object {
             @JvmStatic
-            fun defaults(): Animation = Animation(
-                Type.FRAMES,
-                emptyList(),
-                3,
-                listOf(
-                    "<gradient:#d8b4fe:#f0abfc><bold>{text}</bold></gradient>",
-                    "<gradient:#f0abfc:#c4b5fd><bold>{text}</bold></gradient>",
-                    "<gradient:#c4b5fd:#d8b4fe><bold>{text}</bold></gradient>"
-                )
-            )
+            fun defaults(): Animation = Animation()
         }
     }
 
@@ -66,7 +57,7 @@ data class ProcessingTitleSettings @JvmOverloads constructor(
         companion object {
             @JvmStatic
             fun defaults(): Timings = Timings(
-                Duration.ofMillis(120), Duration.ofMillis(2500),
+                Duration.ofMillis(200), Duration.ofMillis(2500),
                 Duration.ZERO, Duration.ofMillis(1000), Duration.ofMillis(500), Duration.ZERO,
                 Duration.ofSeconds(5), Duration.ZERO
             )

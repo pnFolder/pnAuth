@@ -303,6 +303,10 @@ class AuthUiCoordinator(
     private fun closeWithError(playerId: UUID, error: String) {
         clear(playerId)
         val player = player(playerId) ?: return
+        if (features.dialogs.reopenOnFailure) {
+            showNotice(playerId, error)
+            return
+        }
         player.sendMessage(
             renderer.render("dialog.error", mapOf("error" to error))
                 .append(Component.space()).append(

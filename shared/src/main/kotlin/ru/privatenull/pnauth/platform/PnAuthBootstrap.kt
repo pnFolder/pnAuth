@@ -58,9 +58,18 @@ class PnAuthBootstrap private constructor(
     private var clusterCoordinator: AuthClusterCoordinator? = null
 
     override fun close() {
+        closeInternal(closeLimbo = true)
+    }
+
+    /** Stops reloadable services while keeping the native embedded limbo process alive. */
+    fun closeForReload() {
+        closeInternal(closeLimbo = false)
+    }
+
+    private fun closeInternal(closeLimbo: Boolean) {
         clusterCoordinator?.close()
         externalVerification?.close()
-        limbo?.let { server ->
+        if (closeLimbo) limbo?.let { server ->
             proxy?.unregisterServerRoute(config.limbo.serverName)
             server.close()
         }
@@ -82,6 +91,7 @@ class PnAuthBootstrap private constructor(
         private var bridgeAdapter: PlatformAuthBridgeAdapter? = null
         private var limboAdapter: PlatformLimboAdapter? = null
         private var proxyAdapter: Proxy? = null
+        private var retainedLimbo: LimboServer? = null
         private val limboProviders: MutableList<LimboServerProvider> = mutableListOf(PicoLimboProvider())
 
         fun dataFolder(path: Path): Builder {
@@ -129,6 +139,12 @@ class PnAuthBootstrap private constructor(
             return this
         }
 
+        /** Reuses the already running native limbo server during a configuration reload. */
+        fun retainedLimbo(server: LimboServer?): Builder {
+            this.retainedLimbo = server
+            return this
+        }
+
         fun registerLimboProvider(provider: LimboServerProvider): Builder {
             this.limboProviders.add(provider)
             return this
@@ -147,7 +163,7 @@ class PnAuthBootstrap private constructor(
                 limboRegistry.register(provider)
             }
 
-            var limboServer: LimboServer? = null
+            var limboServer: LimboServer? = retainedLimbo
             if (config.limbo.enabled) {
                 if (!config.proxy.authServer.equals(config.limbo.serverName, ignoreCase = true)) {
                     throw IllegalArgumentException("proxy.auth-server must equal limbo.server-name when limbo is enabled")
@@ -156,8 +172,10 @@ class PnAuthBootstrap private constructor(
                     throw IllegalArgumentException("servers.backend-server must differ from limbo.server-name")
                 }
                 try {
-                    val created = limboRegistry.create(config.limbo.provider, LimboServerContext(dataFolder, config.limbo))
-                    created.start()
+                    val created = limboServer ?: limboRegistry.create(
+                        config.limbo.provider,
+                        LimboServerContext(dataFolder, config.limbo)
+                    ).also { it.start() }
                     limboServer = created
 
                     val routeRegistered = proxyAdapter?.registerServerRoute(config.limbo.serverName, created.host(), created.port()) ?: false
@@ -168,7 +186,7 @@ class PnAuthBootstrap private constructor(
                     proxySettings = proxySettings.requiringServerAuth()
                     logger.info("PicoLimbo embedded server route '${config.limbo.serverName}' active at ${created.host()}:${created.port()}.")
                 } catch (exception: Exception) {
-                    limboServer?.close()
+                    if (retainedLimbo == null) limboServer?.close()
                     throw IllegalStateException("Embedded PicoLimbo is enabled but could not be started", exception)
                 }
             }
@@ -201,7 +219,7 @@ class PnAuthBootstrap private constructor(
             } catch (error: Exception) {
                 externalVerification.close()
                 authService.close()
-                limboServer?.close()
+                if (retainedLimbo == null) limboServer?.close()
                 proxyAdapter?.unregisterServerRoute(config.limbo.serverName)
                 throw IllegalStateException("Не удалось запустить внешнее подтверждение.", error)
             }
@@ -226,7 +244,7 @@ class PnAuthBootstrap private constructor(
             } catch (error: Exception) {
                 externalVerification.close()
                 authService.close()
-                limboServer?.close()
+                if (retainedLimbo == null) limboServer?.close()
                 proxyAdapter?.unregisterServerRoute(config.limbo.serverName)
                 throw IllegalStateException("Не удалось запустить синхронизацию pnAuth.", error)
             }
