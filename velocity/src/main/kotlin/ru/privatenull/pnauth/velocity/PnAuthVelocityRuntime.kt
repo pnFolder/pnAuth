@@ -97,8 +97,9 @@ class PnAuthVelocityRuntime private constructor(
             bridge.bind(vActions)
 
             val vDialogs = VelocityDialogCoordinator(
-                proxy, boot.authService, boot.commandService, boot.messages,
-                config.features, config.messageFormat, config.security.maxPasswordLength, boot.proxySettings, vPlatform
+                owner, proxy, boot.authService, boot.commandService, boot.messages,
+                config.features, config.processingTitle, config.messageFormat,
+                config.security.maxPasswordLength, boot.proxySettings, vPlatform
             )
             dialogs = vDialogs
 

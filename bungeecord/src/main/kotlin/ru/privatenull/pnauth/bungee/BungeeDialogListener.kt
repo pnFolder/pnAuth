@@ -19,6 +19,7 @@ import ru.privatenull.pnauth.command.AuthCommandRequest
 import ru.privatenull.pnauth.command.AuthCommandService
 import ru.privatenull.pnauth.config.FeatureSettings
 import ru.privatenull.pnauth.config.ProxySettings
+import ru.privatenull.pnauth.config.ProcessingTitleSettings
 import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogHandle
 import ru.privatenull.pnauth.dialog.PlayerDialogs
@@ -36,6 +37,7 @@ class BungeeDialogListener internal constructor(
     private val commands: AuthCommandService,
     private val messages: AuthMessages,
     private val settings: FeatureSettings,
+    private val processingTitle: ProcessingTitleSettings,
     private val maxPasswordLength: Int,
     private val proxySettings: ProxySettings,
     private val platform: Platform,
@@ -47,6 +49,7 @@ class BungeeDialogListener internal constructor(
     private val pending: MutableMap<UUID, ScheduledTask> = ConcurrentHashMap()
     private val scheduleGenerations: MutableMap<UUID, Long> = ConcurrentHashMap()
     private val activeDialogs: MutableMap<UUID, DialogHandle> = ConcurrentHashMap()
+    private val processingAnimations: MutableMap<UUID, ScheduledTask> = ConcurrentHashMap()
     private val uiCommand = UiCommand()
 
     init {
@@ -76,6 +79,7 @@ class BungeeDialogListener internal constructor(
         scheduleGenerations.remove(event.player.uniqueId)
         captcha.clear(event.player.uniqueId)
         clearNativeDialog(event.player.uniqueId)
+        stopProcessingTitle(event.player.uniqueId)
     }
 
     fun allowAuthenticationCommand(player: ProxiedPlayer): Boolean {
@@ -90,6 +94,8 @@ class BungeeDialogListener internal constructor(
         pending.keys.forEach { cancel(it) }
         activeDialogs.values.forEach { it.close() }
         activeDialogs.clear()
+        processingAnimations.values.forEach { it.cancel() }
+        processingAnimations.clear()
         captcha.clearAll()
         plugin.proxy.pluginManager.unregisterCommand(uiCommand)
     }
@@ -99,7 +105,12 @@ class BungeeDialogListener internal constructor(
         showProcessingTitle(player)
         commands.execute(
             AuthCommandRequest(player.uniqueId, player.name, command, args) { player.hasPermission(it) }
-        ).thenAccept { result ->
+        ).whenComplete { result, error ->
+            stopProcessingTitle(player.uniqueId)
+            if (error != null) {
+                if (player.isConnected) sendDialogError(player, messages.text("operation-error"))
+                return@whenComplete
+            }
             if (auth.isAuthenticated(player.uniqueId)) {
                 player.sendMessage(*BungeeMessages.components(messages.text("auth.success"), messages.format))
             } else if (player.isConnected) {
@@ -273,21 +284,36 @@ class BungeeDialogListener internal constructor(
     }
 
     private fun showProcessingTitle(player: ProxiedPlayer) {
+        stopProcessingTitle(player.uniqueId)
+        if (!processingTitle.enabled) return
         val frames = ru.privatenull.pnauth.display.ProcessingTitleAnimation.generateFrames(
             messages.text("title.processing"),
-            ru.privatenull.pnauth.config.ProcessingTitleSettings.Animation.defaults()
+            processingTitle.animation
         )
+        if (frames.isEmpty()) return
         val subtitleComp = BungeeMessages.component(messages.text("subtitle.processing"), messages.format)
-        if (frames.isNotEmpty()) {
-            val titleComp = BungeeMessages.component(frames[0], messages.format)
+        val frame = java.util.concurrent.atomic.AtomicInteger()
+        val intervalMillis = processingTitle.timings.frameInterval.toMillis().coerceAtLeast(50L)
+        val stayTicks = ((intervalMillis + 49L) / 50L).toInt().coerceAtLeast(1) + 1
+        val task = plugin.proxy.scheduler.schedule(plugin, {
+            if (!player.isConnected || auth.isAuthenticated(player.uniqueId)) {
+                stopProcessingTitle(player.uniqueId)
+                return@schedule
+            }
+            val titleComp = BungeeMessages.component(frames[frame.getAndIncrement() % frames.size], messages.format)
             val titleObj = plugin.proxy.createTitle()
                 .title(titleComp)
                 .subTitle(subtitleComp)
                 .fadeIn(0)
-                .stay(20)
-                .fadeOut(5)
+                .stay(stayTicks)
+                .fadeOut(0)
             player.sendTitle(titleObj)
-        }
+        }, 0L, intervalMillis, TimeUnit.MILLISECONDS)
+        processingAnimations[player.uniqueId] = task
+    }
+
+    private fun stopProcessingTitle(playerId: UUID) {
+        processingAnimations.remove(playerId)?.cancel()
     }
 
     private inner class UiCommand : Command("_pnauthui") {

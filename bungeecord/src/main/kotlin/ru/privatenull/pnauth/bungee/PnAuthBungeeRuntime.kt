@@ -103,7 +103,7 @@ class PnAuthBungeeRuntime private constructor(
             commandRegistry.register(boot.commandService)
 
             val dListener = BungeeDialogListener(
-                plugin, boot.authService, boot.commandService, boot.messages, config.features,
+                plugin, boot.authService, boot.commandService, boot.messages, config.features, config.processingTitle,
                 config.security.maxPasswordLength, boot.proxySettings, bungeePlatform, commandRegistry
             )
             dialogListener = dListener

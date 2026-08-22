@@ -31,7 +31,7 @@ data class AuthConfig(
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 8
+        const val CURRENT_SCHEMA_VERSION = 9
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -303,11 +303,7 @@ data class AuthConfig(
         }
 
         private fun messageFormat(messages: PnAuthYamlConfig.Messages?): MessageFormat {
-            return try {
-                MessageFormat.parse(messages?.format)
-            } catch (exception: IllegalArgumentException) {
-                throw IOException("Invalid messages.format", exception)
-            }
+            return messages?.format ?: MessageFormat.LEGACY
         }
 
         private fun processingTitle(value: PnAuthYamlConfig.Ui.ProcessingTitle): ProcessingTitleSettings {
@@ -319,10 +315,11 @@ data class AuthConfig(
                     ProcessingTitleSettings.Animation(
                         ProcessingTitleSettings.Type.valueOf(animation.type.uppercase(Locale.ROOT)),
                         animation.colors ?: emptyList(),
-                        animation.frameCount
+                        animation.frameCount,
+                        animation.frames ?: emptyList()
                     ),
                     ProcessingTitleSettings.Timings(
-                        Duration.ofMillis(timings.frameIntervalMillis.toLong()),
+                        Duration.ofMillis(Math.multiplyExact(timings.frameIntervalTicks.toLong(), 50L)),
                         Duration.ofMillis(timings.minimumDisplayMillis.toLong()),
                         Duration.ofMillis(timings.resultFadeInMillis.toLong()),
                         Duration.ofMillis(timings.resultDisplayMillis.toLong()),

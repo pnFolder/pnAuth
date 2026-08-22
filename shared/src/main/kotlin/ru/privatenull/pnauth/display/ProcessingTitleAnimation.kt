@@ -10,6 +10,10 @@ object ProcessingTitleAnimation {
 
     @JvmStatic
     fun generateFrames(text: String, settings: ProcessingTitleSettings.Animation): List<String> {
+        if (settings.type == ProcessingTitleSettings.Type.NONE) return listOf(text)
+        if (settings.type == ProcessingTitleSettings.Type.FRAMES) {
+            return settings.frames.map { frame -> frame.replace("{text}", text) }
+        }
         val colors = if (settings.colors.size >= 2) settings.colors else listOf("#ff4ecd", "#8b5cf6", "#38bdf8")
         val count = Math.max(1, settings.frameCount)
         val frames = ArrayList<String>(count)

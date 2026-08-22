@@ -12,6 +12,7 @@ import ru.privatenull.pnauth.command.AuthCommandRequest
 import ru.privatenull.pnauth.command.AuthCommandService
 import ru.privatenull.pnauth.config.FeatureSettings
 import ru.privatenull.pnauth.config.ProxySettings
+import ru.privatenull.pnauth.config.ProcessingTitleSettings
 import ru.privatenull.pnauth.dialog.AuthDialogFormFactory
 import ru.privatenull.pnauth.dialog.DialogForm
 import ru.privatenull.pnauth.dialog.DialogHandle
@@ -26,11 +27,13 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 class VelocityDialogCoordinator(
+    private val owner: Any,
     private val proxy: ProxyServer,
     private val auth: AuthApi,
     private val commands: AuthCommandService,
     private val messages: AuthMessages,
     private val features: FeatureSettings,
+    private val processingTitle: ProcessingTitleSettings,
     private val format: MessageFormat,
     private val maxPasswordLength: Int,
     private val proxySettings: ProxySettings,
@@ -42,6 +45,7 @@ class VelocityDialogCoordinator(
     private val sessions: MutableMap<UUID, Session> = ConcurrentHashMap()
     private val submissions: MutableMap<UUID, Submission> = ConcurrentHashMap()
     private val activeDialogs: MutableMap<UUID, DialogHandle> = ConcurrentHashMap()
+    private val processingAnimations: MutableMap<UUID, com.velocitypowered.api.scheduler.ScheduledTask> = ConcurrentHashMap()
 
     init {
         proxy.commandManager.register(
@@ -83,6 +87,7 @@ class VelocityDialogCoordinator(
         }
         captcha.clear(playerId)
         clear(player)
+        stopProcessingTitle(player.uniqueId)
     }
 
     fun available(): Boolean = true
@@ -96,6 +101,8 @@ class VelocityDialogCoordinator(
     override fun close() {
         activeDialogs.values.forEach { it.close() }
         activeDialogs.clear()
+        processingAnimations.values.forEach { it.cancel() }
+        processingAnimations.clear()
         submissions.clear()
         sessions.clear()
         captcha.clearAll()
@@ -168,6 +175,7 @@ class VelocityDialogCoordinator(
         error: Throwable?
     ) {
         val playerId = player.uniqueId
+        stopProcessingTitle(playerId)
         if (sessions[playerId] !== session || submissions[playerId] !== submission) return
         try {
             if (error != null) {
@@ -232,23 +240,37 @@ class VelocityDialogCoordinator(
     }
 
     private fun showProcessingTitle(player: Player) {
+        stopProcessingTitle(player.uniqueId)
+        if (!processingTitle.enabled) return
         val frames = ru.privatenull.pnauth.display.ProcessingTitleAnimation.generateFrames(
             messages.text("title.processing"),
-            ru.privatenull.pnauth.config.ProcessingTitleSettings.Animation.defaults()
+            processingTitle.animation
         )
+        if (frames.isEmpty()) return
         val subtitle = VelocityMessages.component(messages.text("subtitle.processing"), format)
-        if (frames.isNotEmpty()) {
+        val frame = java.util.concurrent.atomic.AtomicInteger()
+        val interval = processingTitle.timings.frameInterval
+        val task = proxy.scheduler.buildTask(owner, Runnable {
+            if (!player.isActive || auth.isAuthenticated(player.uniqueId)) {
+                stopProcessingTitle(player.uniqueId)
+                return@Runnable
+            }
             val titleObj = net.kyori.adventure.title.Title.title(
-                VelocityMessages.component(frames[0], format),
+                VelocityMessages.component(frames[frame.getAndIncrement() % frames.size], format),
                 subtitle,
                 net.kyori.adventure.title.Title.Times.times(
                     java.time.Duration.ZERO,
-                    java.time.Duration.ofMillis(1000),
-                    java.time.Duration.ofMillis(250)
+                    interval.plusMillis(100),
+                    java.time.Duration.ZERO
                 )
             )
             player.showTitle(titleObj)
-        }
+        }).repeat(interval.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS).schedule()
+        processingAnimations[player.uniqueId] = task
+    }
+
+    private fun stopProcessingTitle(playerId: UUID) {
+        processingAnimations.remove(playerId)?.cancel()
     }
 
     private fun component(key: String): Component {

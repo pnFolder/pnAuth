@@ -13,7 +13,8 @@ data class ProcessingTitleSettings @JvmOverloads constructor(
     data class Animation @JvmOverloads constructor(
         val type: Type = Type.GRADIENT,
         val colors: List<String> = emptyList(),
-        val frameCount: Int = 12
+        val frameCount: Int = 12,
+        val frames: List<String> = emptyList()
     ) {
         init {
             if (type == Type.GRADIENT && colors.size < 2) throw IllegalArgumentException("A gradient requires at least two colors")
@@ -21,11 +22,22 @@ data class ProcessingTitleSettings @JvmOverloads constructor(
                 if (!color.matches(Regex("#[0-9a-fA-F]{6}"))) throw IllegalArgumentException("Invalid gradient color: $color")
             }
             if (frameCount !in 1..120) throw IllegalArgumentException("frameCount must be between 1 and 120")
+            if (type == Type.FRAMES && frames.isEmpty()) throw IllegalArgumentException("FRAMES animation requires at least one frame")
+            if (frames.size > 120) throw IllegalArgumentException("frames must contain at most 120 entries")
         }
 
         companion object {
             @JvmStatic
-            fun defaults(): Animation = Animation(Type.GRADIENT, listOf("#ff4ecd", "#8b5cf6", "#38bdf8"), 12)
+            fun defaults(): Animation = Animation(
+                Type.FRAMES,
+                emptyList(),
+                3,
+                listOf(
+                    "<gradient:#d8b4fe:#f0abfc><bold>{text}</bold></gradient>",
+                    "<gradient:#f0abfc:#c4b5fd><bold>{text}</bold></gradient>",
+                    "<gradient:#c4b5fd:#d8b4fe><bold>{text}</bold></gradient>"
+                )
+            )
         }
     }
 
@@ -71,5 +83,5 @@ data class ProcessingTitleSettings @JvmOverloads constructor(
         }
     }
 
-    enum class Type { NONE, GRADIENT }
+    enum class Type { NONE, GRADIENT, FRAMES }
 }

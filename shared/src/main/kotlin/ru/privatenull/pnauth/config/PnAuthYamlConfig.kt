@@ -6,6 +6,7 @@ import net.elytrium.serializer.annotations.CommentValue
 import net.elytrium.serializer.annotations.NewLine
 import net.elytrium.serializer.annotations.Transient
 import net.elytrium.serializer.language.`object`.YamlSerializable
+import ru.privatenull.pnauth.message.MessageFormat
 import java.nio.file.Path
 
 open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
@@ -67,7 +68,7 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
             CommentValue("Он применяется к встроенному переводу и файлу messages_<locale>.yml.")
         )
         @JvmField
-        var format: String = "LEGACY"
+        var format: MessageFormat = MessageFormat.LEGACY
     }
 
     @NewLine
@@ -314,18 +315,28 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
             @JvmField var timings: Timings = Timings()
 
             class Animation {
-                @Comment(CommentValue("Тип анимации: NONE или GRADIENT."))
-                @JvmField var type: String = "GRADIENT"
+                @Comment(CommentValue("Тип анимации: NONE, GRADIENT или FRAMES."))
+                @JvmField var type: String = "FRAMES"
                 @Comment(CommentValue("Цвета градиента в формате #RRGGBB; можно указать два и более цвета."))
                 @JvmField var colors: List<String> = listOf("#d8b4fe", "#f0abfc", "#c4b5fd")
 
                 @Comment(CommentValue("Количество кадров в одном бесшовном цикле градиента."))
                 @JvmField var frameCount: Int = 12
+
+                @Comment(
+                    CommentValue("Пользовательские кадры для типа FRAMES; каждый элемент — отдельный MiniMessage-текст."),
+                    CommentValue("Плейсхолдер {text} подставляет локализованное сообщение title.processing.")
+                )
+                @JvmField var frames: List<String> = listOf(
+                    "<gradient:#d8b4fe:#f0abfc><bold>{text}</bold></gradient>",
+                    "<gradient:#f0abfc:#c4b5fd><bold>{text}</bold></gradient>",
+                    "<gradient:#c4b5fd:#d8b4fe><bold>{text}</bold></gradient>"
+                )
             }
 
             class Timings {
-                @Comment(CommentValue("Пауза между кадрами анимации, в миллисекундах."))
-                @JvmField var frameIntervalMillis: Int = 120
+                @Comment(CommentValue("Пауза между кадрами анимации, в игровых тиках; 20 тиков = 1 секунда."))
+                @JvmField var frameIntervalTicks: Int = 3
 
                 @Comment(CommentValue("Минимальное время показа индикатора; завершение авторизации при этом не задерживается."))
                 @JvmField var minimumDisplayMillis: Int = 2500
@@ -554,6 +565,7 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     companion object {
         @Transient
         private val SERIALIZER: SerializerConfig = SerializerConfig.Builder()
+            .registerSerializer(MessageFormatSerializer())
             .setCommentValueIndent(1)
             .build()
     }
