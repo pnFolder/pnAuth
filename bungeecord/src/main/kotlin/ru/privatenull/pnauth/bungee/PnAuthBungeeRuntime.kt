@@ -109,7 +109,7 @@ class PnAuthBungeeRuntime private constructor(
             dialogListener = dListener
 
             val cRegistrar = BungeeCommandRegistrar(
-                plugin, proxyServer.pluginManager, commandRegistry, boot.messages.format()
+                plugin, proxyServer.pluginManager, commandRegistry, boot.messages.format(), plugin::reloadConfiguration
             )
             commandRegistrar = cRegistrar
             cRegistrar.register()
@@ -148,6 +148,26 @@ class PnAuthBungeeRuntime private constructor(
         bootstrap?.close()
         playerDisplay?.close()
         playerDialogs?.close()
+    }
+
+    @Synchronized
+    fun reloadConfiguration(): String {
+        val configPath = plugin.dataFolder.toPath().resolve("config.yml")
+        val defaultUrl = "jdbc:sqlite:" + plugin.dataFolder.toPath().resolve("auth.db").toAbsolutePath().normalize()
+        try {
+            val candidate = AuthConfig.load(configPath, defaultUrl)
+            validateBackendTargets(candidate.proxy)
+        } catch (error: Exception) {
+            return "Конфигурация pnAuth не перезагружена: ${error.message ?: "ошибка проверки"}"
+        }
+        return try {
+            close()
+            onEnable()
+            "Конфигурация pnAuth успешно перезагружена."
+        } catch (error: Exception) {
+            plugin.logger.log(java.util.logging.Level.SEVERE, "pnAuth reload failed", error)
+            "Не удалось применить конфигурацию pnAuth: ${error.message ?: "неизвестная ошибка"}"
+        }
     }
 
     override fun api(): AuthApi = bootstrap?.authService

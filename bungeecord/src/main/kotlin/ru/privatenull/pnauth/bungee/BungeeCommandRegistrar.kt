@@ -10,13 +10,14 @@ internal class BungeeCommandRegistrar(
     private val owner: Plugin,
     private val pluginManager: PluginManager,
     private val commandService: CommandService,
-    private val messageFormat: MessageFormat
+    private val messageFormat: MessageFormat,
+    private val reloadConfiguration: () -> String
 ) : AutoCloseable {
     private val registered: MutableList<Command> = ArrayList()
 
     fun register() {
         for (definition in commandService.definitions()) {
-            val command = AuthBungeeCommand(definition, commandService, messageFormat)
+            val command = AuthBungeeCommand(definition, commandService, messageFormat, reloadConfiguration)
             registered.add(command)
             pluginManager.registerCommand(owner, command)
         }

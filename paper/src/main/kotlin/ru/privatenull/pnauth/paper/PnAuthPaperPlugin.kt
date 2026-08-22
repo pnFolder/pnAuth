@@ -27,4 +27,7 @@ class PnAuthPaperPlugin : JavaPlugin() {
 
     /** Returns the platform-neutral player API. */
     fun getPlatform(): Platform? = runtime?.platform()
+
+    fun reloadConfiguration(): String = runtime?.reloadConfiguration()
+        ?: "pnAuth ещё не инициализирован."
 }

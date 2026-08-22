@@ -9,13 +9,24 @@ import ru.privatenull.pnauth.message.MessageFormat
 class AuthVelocityCommand(
     definition: CommandSpec,
     private val handler: CommandService,
-    private val messageFormat: MessageFormat
+    private val messageFormat: MessageFormat,
+    private val reloadConfiguration: () -> String
 ) : SimpleCommand {
 
     private val root: String = definition.name
 
     override fun execute(invocation: SimpleCommand.Invocation) {
         val source = invocation.source()
+        if (root == "auth" && invocation.arguments().size == 1 &&
+            invocation.arguments()[0].equals("reload", ignoreCase = true)) {
+            val result = if (source.hasPermission("pnauth.admin.reload")) {
+                reloadConfiguration()
+            } else {
+                "У вас нет прав на перезагрузку pnAuth."
+            }
+            source.sendMessage(VelocityMessages.component(result, messageFormat))
+            return
+        }
         handler.execute(
             CommandContext(
                 VelocityCommandSource(source),

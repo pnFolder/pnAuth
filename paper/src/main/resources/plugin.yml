@@ -20,3 +20,7 @@ commands:
   unregister:
     aliases: [unreg]
   status: {}
+permissions:
+  pnauth.admin.reload:
+    description: Allows reloading the pnAuth configuration.
+    default: op

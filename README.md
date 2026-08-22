@@ -45,6 +45,7 @@ pnAuth — плагин авторизации для прокси BungeeCord и
 
 | Команда | Право |
 | --- | --- |
+| `/pnauth reload` | `pnauth.admin.reload` |
 | `/auth unregister <игрок>` | `pnauth.admin.commands.unregister` |
 | `/auth changepassword <игрок> <пароль>` | `pnauth.admin.commands.changepassword` |
 | `/auth forcelogin <игрок>` | `pnauth.admin.commands.forcelogin` |
@@ -52,6 +53,11 @@ pnAuth — плагин авторизации для прокси BungeeCord и
 | `/auth forcepremium <игрок>` | `pnauth.admin.commands.forcepremium` |
 | `/auth broadcast <сообщение>` | `pnauth.admin.commands.broadcast` |
 | `/auth migrate <источник> <JDBC URL> [user] [password]` | `pnauth.admin.commands.migrate` |
+
+Команду `pnauth reload` можно выполнить непосредственно в консоли без начального `/`.
+Перед применением pnAuth проверяет новый YAML; при ошибке действующая конфигурация продолжает работать.
+Успешная перезагрузка пересоздаёт сервисы, зависящие от настроек, включая сообщения, хранилище,
+limbo, внешнее подтверждение и сетевую синхронизацию.
 
 Premium-режим меняет режим аутентификации прокси, поэтому он доступен только администратору через `/auth forcepremium`; обычной команды самообслуживания нет.
 

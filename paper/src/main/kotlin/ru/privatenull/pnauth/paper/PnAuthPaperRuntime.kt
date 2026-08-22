@@ -4,6 +4,7 @@ import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.HandlerList
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.plugin.java.JavaPlugin
@@ -35,6 +36,7 @@ class PnAuthPaperRuntime private constructor(
     private var platform: PaperPlatform? = null
     private var dialogs: PaperPlayerDialogs? = null
     private var paperSettings: PaperSettings? = null
+    private var accessListener: PaperAccessListener? = null
     private val originalLocations = ConcurrentHashMap<UUID, Location>()
 
     fun onEnable() {
@@ -73,7 +75,7 @@ class PnAuthPaperRuntime private constructor(
 
             // Commands
             val commandService = boot.commandService
-            val commandAdapter = PaperAuthCommand(commandService)
+            val commandAdapter = PaperAuthCommand(commandService, ::reloadConfiguration)
             commandService.definitions().forEach { definition ->
                 val command = plugin.getCommand(definition.name)
                     ?: throw IllegalStateException("Missing command declaration: " + definition.name)
@@ -83,7 +85,9 @@ class PnAuthPaperRuntime private constructor(
 
             // Listeners
             plugin.server.pluginManager.registerEvents(this, plugin)
-            plugin.server.pluginManager.registerEvents(PaperAccessListener(boot.authService, config.paper), plugin)
+            val access = PaperAccessListener(boot.authService, config.paper)
+            accessListener = access
+            plugin.server.pluginManager.registerEvents(access, plugin)
 
             plugin.logger.info("pnAuth enabled for ${paperPlatform.type()}.")
         } catch (exception: Exception) {
@@ -92,10 +96,31 @@ class PnAuthPaperRuntime private constructor(
     }
 
     override fun close() {
+        HandlerList.unregisterAll(this)
+        accessListener?.let(HandlerList::unregisterAll)
         originalLocations.clear()
         display?.close()
         dialogs?.close()
         bootstrap?.close()
+    }
+
+    @Synchronized
+    fun reloadConfiguration(): String {
+        val dataFolder = plugin.dataFolder.toPath()
+        val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
+        try {
+            AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
+        } catch (error: Exception) {
+            return "Конфигурация pnAuth не перезагружена: ${error.message ?: "ошибка проверки"}"
+        }
+        return try {
+            close()
+            onEnable()
+            "Конфигурация pnAuth успешно перезагружена."
+        } catch (error: Exception) {
+            plugin.logger.log(java.util.logging.Level.SEVERE, "pnAuth reload failed", error)
+            "Не удалось применить конфигурацию pnAuth: ${error.message ?: "неизвестная ошибка"}"
+        }
     }
 
     @EventHandler

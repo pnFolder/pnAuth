@@ -29,4 +29,7 @@ class PnAuthBungeePlugin : Plugin() {
     fun getPlatform(): Platform? = runtime?.platform()
 
     fun getProxyAdapter(): BungeeProxyAdapter? = runtime?.proxyAdapter()
+
+    fun reloadConfiguration(): String = runtime?.reloadConfiguration()
+        ?: "pnAuth ещё не инициализирован."
 }

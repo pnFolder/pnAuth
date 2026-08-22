@@ -10,12 +10,21 @@ import ru.privatenull.pnauth.message.MessageFormat
 class AuthBungeeCommand(
     definition: CommandSpec,
     private val handler: CommandService,
-    private val messageFormat: MessageFormat
+    private val messageFormat: MessageFormat,
+    private val reloadConfiguration: () -> String
 ) : Command(definition.name, null, *definition.aliases.toTypedArray()) {
 
     private val root: String = definition.name
 
     override fun execute(sender: CommandSender, args: Array<out String>) {
+        if (root == "auth" && args.size == 1 && args[0].equals("reload", ignoreCase = true)) {
+            if (!sender.hasPermission("pnauth.admin.reload")) {
+                send(sender, "У вас нет прав на перезагрузку pnAuth.", messageFormat)
+                return
+            }
+            send(sender, reloadConfiguration(), messageFormat)
+            return
+        }
         val source = BungeeCommandSource(sender)
         handler.execute(CommandContext(source, root, args.toList()))
             .thenAccept { messages ->

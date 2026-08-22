@@ -9,7 +9,8 @@ import ru.privatenull.pnauth.command.CommandService
 
 /** Thin Paper/Folia command adapter; command behavior lives in the shared service. */
 internal class PaperAuthCommand(
-    private val commands: CommandService
+    private val commands: CommandService,
+    private val reloadConfiguration: () -> String
 ) : CommandExecutor, TabCompleter {
 
     override fun onCommand(
@@ -18,6 +19,14 @@ internal class PaperAuthCommand(
         label: String,
         arguments: Array<out String>
     ): Boolean {
+        if (command.name.equals("auth", ignoreCase = true) && arguments.size == 1 &&
+            arguments[0].equals("reload", ignoreCase = true)) {
+            sender.sendMessage(
+                if (sender.hasPermission("pnauth.admin.reload")) reloadConfiguration()
+                else "У вас нет прав на перезагрузку pnAuth."
+            )
+            return true
+        }
         val context = CommandContext(
             PaperCommandSource(sender),
             command.name,

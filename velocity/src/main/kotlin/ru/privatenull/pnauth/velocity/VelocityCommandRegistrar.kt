@@ -7,7 +7,8 @@ import ru.privatenull.pnauth.message.MessageFormat
 internal class VelocityCommandRegistrar(
     private val proxy: ProxyServer,
     private val commandService: CommandService,
-    private val messageFormat: MessageFormat
+    private val messageFormat: MessageFormat,
+    private val reloadConfiguration: () -> String
 ) : AutoCloseable {
 
     private val registered = mutableListOf<String>()
@@ -20,7 +21,7 @@ internal class VelocityCommandRegistrar(
                 .build()
             commandManager.register(
                 meta,
-                AuthVelocityCommand(definition, commandService, messageFormat)
+                AuthVelocityCommand(definition, commandService, messageFormat, reloadConfiguration)
             )
             registered.add(definition.name)
         }

@@ -183,11 +183,11 @@ class AuthCommandService @JvmOverloads constructor(
     fun suggest(command: String, arguments: List<String>): List<String> {
         val normalized = normalize(command)
         if ((normalized == "auth" || normalized == "pnauth") && arguments.isEmpty()) {
-            return listOf("unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "broadcast", "migrate")
+            return listOf("reload", "unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "broadcast", "migrate")
         }
         if (normalized == "auth" || normalized == "pnauth") {
             val prefix = if (arguments.isEmpty()) "" else normalize(arguments[arguments.size - 1])
-            return listOf("unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "broadcast", "migrate")
+            return listOf("reload", "unregister", "changepassword", "forcelogin", "forceregister", "forcepremium", "broadcast", "migrate")
                 .filter { it.startsWith(prefix) }
         }
         return emptyList()

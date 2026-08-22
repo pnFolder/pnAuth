@@ -38,6 +38,7 @@ class PnAuthVelocityRuntime private constructor(
     private var commandRegistrar: VelocityCommandRegistrar? = null
     private var actions: VelocityAuthActions? = null
     private var authTasks: VelocityAuthTasks? = null
+    private var authListener: VelocityAuthListener? = null
     private var dialogs: VelocityDialogCoordinator? = null
     private var playerDisplay: VelocityPlayerDisplay? = null
     private var playerDialogs: PacketEventsPlayerDialogs? = null
@@ -101,17 +102,18 @@ class PnAuthVelocityRuntime private constructor(
             )
             dialogs = vDialogs
 
-            val vCmdRegistrar = VelocityCommandRegistrar(proxy, boot.commandService, config.messageFormat)
+            val vCmdRegistrar = VelocityCommandRegistrar(
+                proxy, boot.commandService, config.messageFormat, ::reloadConfiguration
+            )
             commandRegistrar = vCmdRegistrar
             vCmdRegistrar.register()
 
-            proxy.eventManager.register(
-                owner,
-                VelocityAuthListener(
-                    proxy, boot.authService, boot.lifecycleCoordinator, config.messageFormat, null,
-                    boot.proxySettings, vDialogs, boot.messages
-                )
+            val listener = VelocityAuthListener(
+                proxy, boot.authService, boot.lifecycleCoordinator, config.messageFormat, null,
+                boot.proxySettings, vDialogs, boot.messages
             )
+            authListener = listener
+            proxy.eventManager.register(owner, listener)
 
             val tasks = VelocityAuthTasks(
                 owner, proxy, boot.authService, boot.messages, config.features, boot.proxySettings,
@@ -133,12 +135,33 @@ class PnAuthVelocityRuntime private constructor(
     }
 
     override fun close() {
+        authListener?.let { proxy.eventManager.unregisterListener(owner, it) }
+        authTasks?.let { proxy.eventManager.unregisterListener(owner, it) }
         bootstrap?.close()
         playerDisplay?.close()
         commandRegistrar?.close()
         authTasks?.close()
         dialogs?.close()
         playerDialogs?.close()
+    }
+
+    @Synchronized
+    fun reloadConfiguration(): String {
+        val defaultUrl = "jdbc:sqlite:" + dataDirectory.resolve("auth.db").toAbsolutePath().normalize()
+        try {
+            val candidate = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
+            validateBackendTargets(candidate.proxy)
+        } catch (error: Exception) {
+            return "Конфигурация pnAuth не перезагружена: ${error.message ?: "ошибка проверки"}"
+        }
+        return try {
+            close()
+            onProxyInitialization()
+            "Конфигурация pnAuth успешно перезагружена."
+        } catch (error: Exception) {
+            logger.error("pnAuth reload failed", error)
+            "Не удалось применить конфигурацию pnAuth: ${error.message ?: "неизвестная ошибка"}"
+        }
     }
 
     override fun api(): AuthApi = bootstrap?.authService
