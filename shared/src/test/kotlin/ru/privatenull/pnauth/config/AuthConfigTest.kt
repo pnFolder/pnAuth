@@ -34,8 +34,8 @@ class AuthConfigTest {
         assertTrue(generated.contains("processing-title:"))
         assertTrue(generated.contains("reopen-on-failure:"))
         assertEquals(ProcessingTitleSettings.Type.GRADIENT, config.processingTitle.animation.type)
-        assertEquals(18, config.processingTitle.animation.frameCount)
-        assertEquals(200L, config.processingTitle.timings.frameInterval.toMillis())
+        assertEquals(48, config.processingTitle.animation.frameCount)
+        assertEquals(100L, config.processingTitle.timings.frameInterval.toMillis())
         assertFalse(config.features.dialogs.reopenOnFailure)
         assertEquals(MessageFormat.MINI_MESSAGE, config.messageFormat)
     }

@@ -71,8 +71,8 @@ object MessageCatalog {
             "&8[&d&lpnAuth&8] &fSecurity check: click number &d{answer}&f:", "&8[&d{value}&8]",
             "&7Click to confirm", "&aSecurity check passed.", "&cWrong option. Try again.",
             "&cThe challenge expired. Request a new one.", "&cToo many incorrect attempts.", "&d[New challenge]",
-            "&8[&d&lpnAuth&8] &c{error} &7The dialog was closed.", "&d[Try again]",
-            "&7Click to reopen the dialog", "&8[&d&lpnAuth&8] &aYou have successfully logged in. Welcome!"
+            "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <red>{error}</red> <gray>The dialog was closed.</gray> <auth:open_dialog><hover:show_text:'<gray>Click to reopen the dialog</gray>'><gradient:#a855f7:#38bdf8><bold>[Try again]</bold></gradient></hover></auth>",
+            "&8[&d&lpnAuth&8] &aYou have successfully logged in. Welcome!"
         )
         values["broadcast.message"] = "&8[&d&lAnnouncement&8] &f{message}"
         values["title.login.success"] = "<gradient:#55FF55:#00AA00><bold>WELCOME BACK</bold></gradient>"
@@ -149,8 +149,8 @@ object MessageCatalog {
             "&8[&d&lpnAuth&8] &fПроверка безопасности: нажмите число &d{answer}&f:", "&8[&d{value}&8]",
             "&7Нажмите, чтобы подтвердить", "&aПроверка пройдена.", "&cНеверный вариант. Попробуйте ещё раз.",
             "&cПроверка устарела. Получите новую.", "&cСлишком много неверных попыток.", "&d[Пройти проверку]",
-            "&8[&d&lpnAuth&8] &c{error} &7Окно закрыто.", "&d[Повторить вход]",
-            "&7Нажмите, чтобы снова открыть окно", "&8[&d&lpnAuth&8] &aВы успешно авторизовались. Добро пожаловать!"
+            "<dark_gray>[<light_purple><bold>pnAuth</bold></light_purple>]</dark_gray> <red>{error}</red> <gray>Окно закрыто.</gray> <auth:open_dialog><hover:show_text:'<gray>Нажмите, чтобы снова открыть окно</gray>'><gradient:#a855f7:#38bdf8><bold>[Повторить вход]</bold></gradient></hover></auth>",
+            "&8[&d&lpnAuth&8] &aВы успешно авторизовались. Добро пожаловать!"
         )
         values["broadcast.message"] = "&8[&d&lОбъявление&8] &f{message}"
         values["title.login.success"] = "<gradient:#55FF55:#00AA00><bold>УСПЕШНЫЙ ВХОД</bold></gradient>"
@@ -216,7 +216,7 @@ object MessageCatalog {
     private fun putInteractive(values: MutableMap<String, Any>, vararg entries: String) {
         val keys = arrayOf(
             "captcha.prompt", "captcha.option", "captcha.hover", "captcha.success", "captcha.invalid", "captcha.expired",
-            "captcha.locked", "captcha.retry", "dialog.error", "dialog.retry", "dialog.retry_hover", "auth.success"
+            "captcha.locked", "captcha.retry", "dialog.error", "auth.success"
         )
         put(values, keys, entries)
     }

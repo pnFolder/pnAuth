@@ -30,7 +30,11 @@ object MessageFileGenerator {
         if (Files.notExists(file)) {
             write(file, MessageCatalog.defaults(normalized))
         } else {
-            read(file)
+            val values = LinkedHashMap(read(file))
+            if (migrateDialogError(values, normalized)) {
+                Files.copy(file, file.resolveSibling(file.fileName.toString() + ".bak"), StandardCopyOption.REPLACE_EXISTING)
+                write(file, values)
+            }
         }
         return file
     }
@@ -53,9 +57,12 @@ object MessageFileGenerator {
             indent = 2
             defaultScalarStyle = DumperOptions.ScalarStyle.DOUBLE_QUOTED
         }
-        val header = "# pnAuth messages are generated from code defaults.\n" +
-                "# Edit values below. Existing values are preserved when the plugin is updated.\n" +
-                "# Missing keys use built-in defaults without rewriting this file.\n\n"
+        val header = "# Сообщения pnAuth созданы из Kotlin-конфигурации и доступны для редактирования.\n" +
+                "# Рекомендуемый формат — MINI_MESSAGE: стандартные цвета, gradient, hover и другие теги поддерживаются.\n" +
+                "# Дополнительное действие pnAuth: <auth:open_dialog>текст кнопки</auth>.\n" +
+                "# Доступные auth-действия: open_dialog. Неизвестное действие будет отклонено с предупреждением.\n" +
+                "# Пример hover: <auth:open_dialog><hover:show_text:'<gray>Подсказка</gray>'>[Кнопка]</hover></auth>.\n" +
+                "# {error} и другие плейсхолдеры заменяются безопасно и не могут внедрить MiniMessage-теги.\n\n"
         val parent = file.parent
         val temporary = Files.createTempFile(parent, file.fileName.toString(), ".tmp")
         try {
@@ -98,6 +105,24 @@ object MessageFileGenerator {
         }
         if (value != null) output[prefix] = value
     }
+
+    private fun migrateDialogError(values: MutableMap<String, Any>, locale: String): Boolean {
+        val retry = values.remove("dialog.retry")?.toString()
+        val hover = values.remove("dialog.retry_hover")?.toString()
+        if (retry == null && hover == null) return false
+        val defaults = MessageCatalog.defaults(locale)
+        val error = values["dialog.error"]?.toString()
+            ?: defaults.getValue("dialog.error").toString()
+        val button = retry ?: if (locale == "ru") "&d[Повторить вход]" else "&d[Try again]"
+        val hint = hover ?: if (locale == "ru") "&7Нажмите, чтобы снова открыть окно" else "&7Click to reopen the dialog"
+        val mini = MessageRenderers.forFormat(MessageFormat.MINI_MESSAGE)
+        values["dialog.error"] = mini.render(error) +
+            " <auth:open_dialog><hover:show_text:'${miniArgument(mini.render(hint))}'>" +
+            mini.render(button) + "</hover></auth>"
+        return true
+    }
+
+    private fun miniArgument(value: String): String = value.replace("\\", "\\\\").replace("'", "\\'")
 
     @Suppress("UNCHECKED_CAST")
     private fun cast(value: Any): MutableMap<String, Any> {

@@ -307,14 +307,7 @@ class AuthUiCoordinator(
             showNotice(playerId, error)
             return
         }
-        player.sendMessage(
-            renderer.render("dialog.error", mapOf("error" to error))
-                .append(Component.space()).append(
-                    renderer.render("dialog.retry")
-                        .clickEvent(ClickEvent.runCommand(UI_COMMAND + " open"))
-                        .hoverEvent(HoverEvent.showText(renderer.render("dialog.retry_hover")))
-                )
-        )
+        player.sendMessage(renderer.render("dialog.error", mapOf("error" to error)))
     }
 
     private fun sendCaptcha(player: Player) {

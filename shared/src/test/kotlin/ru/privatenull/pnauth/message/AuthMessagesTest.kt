@@ -112,4 +112,26 @@ class AuthMessagesTest {
         )
         assertTrue(Files.exists(directory.resolve("messages_ru.yml")))
     }
+
+    @Test
+    fun combinesLegacyDialogFieldsWithoutLosingCustomText(@TempDir directory: Path) {
+        val file = directory.resolve("messages_ru.yml")
+        Files.writeString(
+            file,
+            "dialog:\n  error: '&cСвоя ошибка: {error}'\n  retry: '&d[Ещё раз]'\n" +
+                "  retry_hover: '&7Снова открыть форму'\n"
+        )
+
+        MessageFileGenerator.ensure(directory, "ru")
+
+        val migrated = Files.readString(file)
+        assertTrue(migrated.contains("Своя ошибка"))
+        assertTrue(migrated.contains("Ещё раз"))
+        assertTrue(migrated.contains("<auth:open_dialog>"))
+        assertFalse(migrated.contains("retry_hover"))
+        assertTrue(Files.exists(directory.resolve("messages_ru.yml.bak")))
+        val rendered = AuthMessages.load(directory, "ru", MessageFormat.MINI_MESSAGE)
+            .text("dialog.error", mapOf("error" to "Неверный пароль"))
+        assertTrue(rendered.contains("Снова открыть форму"))
+    }
 }

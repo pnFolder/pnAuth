@@ -230,18 +230,9 @@ class VelocityDialogCoordinator(
             return
         }
 
-        player.sendMessage(
-            VelocityMessages.component(messages.text("dialog.error", mapOf("error" to error)), format)
-                .append(Component.space()).append(
-                    VelocityMessages.component(messages.text("dialog.retry"), format)
-                        .clickEvent(ClickEvent.runCommand("/_pnauthui open"))
-                        .hoverEvent(
-                            HoverEvent.showText(
-                                VelocityMessages.component(messages.text("dialog.retry_hover"), format)
-                            )
-                        )
-                )
-        )
+        player.sendMessage(VelocityMessages.component(
+            messages.text("dialog.error", mapOf("error" to error)), format
+        ))
     }
 
     private fun showProcessingTitle(player: Player) {
@@ -265,7 +256,7 @@ class VelocityDialogCoordinator(
                 subtitle,
                 net.kyori.adventure.title.Title.Times.times(
                     java.time.Duration.ZERO,
-                    interval.plusMillis(100),
+                    processingTitle.timings.stay,
                     java.time.Duration.ZERO
                 )
             )

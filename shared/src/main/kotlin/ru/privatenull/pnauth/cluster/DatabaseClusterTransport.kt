@@ -149,6 +149,12 @@ class DatabaseClusterTransport(
     override fun close() {
         running.set(false)
         executor.shutdownNow()
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) healthy.set(false)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            healthy.set(false)
+        }
         listeners.clear()
         seen.clear()
     }

@@ -64,7 +64,7 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
 
     /** Replaces only the short-lived v9 preset; user-authored frame animations remain untouched. */
     private fun migrateProcessingAnimationDefaults(yaml: PnAuthYamlConfig) {
-        if (yaml.configVersion >= 10) return
+        if (yaml.configVersion >= 12) return
         val animation = yaml.ui.processingTitle.animation
         val timings = yaml.ui.processingTitle.timings
         val oldFrames = listOf(
@@ -79,6 +79,21 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
             animation.colors = listOf("#8b5cf6", "#c084fc", "#38bdf8")
             animation.frameCount = 18
             timings.frameIntervalTicks = 4
+        }
+        if (animation.type.equals("GRADIENT", ignoreCase = true) &&
+            animation.colors == listOf("#8b5cf6", "#c084fc", "#38bdf8") &&
+            animation.frameCount == 18 && timings.frameIntervalTicks == 4
+        ) {
+            animation.colors = listOf("#7c3aed", "#a855f7", "#ec4899", "#38bdf8", "#7c3aed")
+            animation.frameCount = 36
+        }
+        if (animation.type.equals("GRADIENT", ignoreCase = true) &&
+            animation.colors == listOf("#7c3aed", "#a855f7", "#ec4899", "#38bdf8", "#7c3aed") &&
+            animation.frameCount == 36 && timings.frameIntervalTicks == 4
+        ) {
+            animation.colors = listOf("#7c3aed", "#a855f7", "#6366f1", "#38bdf8", "#7c3aed")
+            animation.frameCount = 48
+            timings.frameIntervalTicks = 2
         }
     }
 

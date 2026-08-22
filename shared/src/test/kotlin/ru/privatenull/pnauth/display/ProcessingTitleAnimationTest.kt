@@ -30,4 +30,14 @@ class ProcessingTitleAnimationTest {
         )
         assertEquals(listOf("Проверка"), ProcessingTitleAnimation.generateFrames("Проверка", settings))
     }
+
+    @Test
+    fun gradientProducesEveryConfiguredPhaseInsteadOfRotatingDuplicateColors() {
+        val settings = ProcessingTitleSettings.Animation.defaults()
+        val frames = ProcessingTitleAnimation.generateFrames("ПРОВЕРКА", settings)
+
+        assertEquals(48, frames.size)
+        assertEquals(48, frames.toSet().size)
+        assertEquals(true, frames.first().contains(":-1.0000>"))
+    }
 }

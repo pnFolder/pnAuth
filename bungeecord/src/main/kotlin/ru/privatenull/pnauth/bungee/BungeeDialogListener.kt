@@ -4,8 +4,6 @@ import net.kyori.adventure.text.Component
 import net.md_5.bungee.api.CommandSender
 import net.md_5.bungee.api.chat.BaseComponent
 import net.md_5.bungee.api.chat.ClickEvent
-import net.md_5.bungee.api.chat.HoverEvent
-import net.md_5.bungee.api.chat.hover.content.Text
 import net.md_5.bungee.api.connection.ProxiedPlayer
 import net.md_5.bungee.api.event.PlayerDisconnectEvent
 import net.md_5.bungee.api.event.PostLoginEvent
@@ -282,17 +280,9 @@ class BungeeDialogListener internal constructor(
             }
         }
 
-        val line = mutableListOf<BaseComponent>()
-        line.addAll(BungeeMessages.components(messages.text("dialog.error", mapOf("error" to error)), messages.format).toList())
-        line.add(net.md_5.bungee.api.chat.TextComponent(" "))
-        val retry = BungeeMessages.components(messages.text("dialog.retry"), messages.format)
-        val retryHover = BungeeMessages.components(messages.text("dialog.retry_hover"), messages.format)
-        for (part in retry) {
-            part.clickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/_pnauthui open")
-            part.hoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, Text(retryHover))
-            line.add(part)
-        }
-        player.sendMessage(*line.toTypedArray())
+        player.sendMessage(*BungeeMessages.components(
+            messages.text("dialog.error", mapOf("error" to error)), messages.format
+        ))
     }
 
     private fun showProcessingTitle(player: ProxiedPlayer) {
@@ -306,7 +296,7 @@ class BungeeDialogListener internal constructor(
         val subtitleComp = BungeeMessages.component(messages.text("subtitle.processing"), messages.format)
         val frame = java.util.concurrent.atomic.AtomicInteger()
         val intervalMillis = processingTitle.timings.frameInterval.toMillis().coerceAtLeast(50L)
-        val stayTicks = ((intervalMillis + 49L) / 50L).toInt().coerceAtLeast(1) + 1
+        val stayTicks = ((processingTitle.timings.stay.toMillis() + 49L) / 50L).toInt().coerceAtLeast(20)
         val task = plugin.proxy.scheduler.schedule(plugin, {
             if (!player.isConnected || auth.isAuthenticated(player.uniqueId)) {
                 stopProcessingTitle(player.uniqueId)

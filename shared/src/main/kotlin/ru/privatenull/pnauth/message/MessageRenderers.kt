@@ -47,7 +47,11 @@ object MessageRenderers {
                 if (jsonTemplate != null) return jsonTemplate
             }
 
-            val value = replacePlaceholders(source, replacements, format == MessageFormat.MINI_MESSAGE)
+            val interactive = source.contains("<auth:", ignoreCase = true)
+            val value = replacePlaceholders(source, replacements, format == MessageFormat.MINI_MESSAGE || interactive)
+            // An auth action marks a complete MiniMessage document. Re-converting it as
+            // legacy would escape nested hover tags and expose their markup to the player.
+            if (interactive) return restoreMiniMarkers(value)
             return when (format) {
                 MessageFormat.LEGACY -> value
                 MessageFormat.MINI_MESSAGE -> restoreMiniMarkers(toMiniMessage(value))
@@ -408,7 +412,7 @@ object MessageRenderers {
         "reset", "bold", "b", "italic", "i", "underlined", "u", "strikethrough", "st",
         "obfuscated", "obf", "click", "hover", "insertion", "font", "gradient", "rainbow",
         "transition", "newline", "br", "keybind", "selector", "score", "nbt", "translatable",
-        "lang", "fallback"
+        "lang", "fallback", "auth"
     )
 
     private val COLORS = mapOf(
