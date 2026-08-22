@@ -25,6 +25,9 @@ object PacketEventsBootstrap {
     private const val VELOCITY_URL = "https://github.com/retrooper/packetevents/releases/download/" +
             "v2.13.0/packetevents-velocity-2.13.0.jar"
     private const val VELOCITY_SHA = "E797F84ABC349C137396E511CE4F0D7B85E385727A2E82E2FFB6BED0D2FE5C05"
+    private const val PAPER_URL = "https://github.com/retrooper/packetevents/releases/download/" +
+            "v2.13.0/packetevents-spigot-2.13.0.jar"
+    private const val PAPER_SHA = "6D9ECE0D87EE727A79A20B7FFBD432021609C6F52BAFCB654FC2D3E9B6F064C5"
 
     @JvmStatic
     @Throws(Exception::class)
@@ -36,6 +39,7 @@ object PacketEventsBootstrap {
     ): Result {
         val configFile = dataDirectory.resolve("dependencies.yml")
         if (Files.notExists(configFile)) writeDefaults(configFile)
+        ensurePlatformDefaults(configFile, platform)
         val settings = load(configFile, platform)
         if (!settings.enabled) return Result.DISABLED
 
@@ -125,8 +129,26 @@ object PacketEventsBootstrap {
                 url: "$VELOCITY_URL"
                 sha-256: "$VELOCITY_SHA"
                 file-name: "packetevents-velocity-2.13.0.jar"
+              paper:
+                url: "$PAPER_URL"
+                sha-256: "$PAPER_SHA"
+                file-name: "packetevents-spigot-2.13.0.jar"
             """.trimIndent()
         Files.writeString(file, yaml)
+    }
+
+    /** Adds newly supported platforms without replacing administrator-defined dependency settings. */
+    private fun ensurePlatformDefaults(file: Path, platform: Platform) {
+        if (platform != Platform.PAPER) return
+        val source = Files.readString(file)
+        if (Regex("(?m)^\\s{2}paper:\\s*$").containsMatchIn(source)) return
+        val paperDefaults = """
+              paper:
+                url: "$PAPER_URL"
+                sha-256: "$PAPER_SHA"
+                file-name: "packetevents-spigot-2.13.0.jar"
+            """.trimIndent()
+        Files.writeString(file, source.trimEnd() + System.lineSeparator() + paperDefaults + System.lineSeparator())
     }
 
     private fun verify(file: Path, expectedHash: String, descriptor: String) {
@@ -178,7 +200,8 @@ object PacketEventsBootstrap {
 
     enum class Platform(val configKey: String, val descriptor: String) {
         BUNGEECORD("bungeecord", "plugin.yml"),
-        VELOCITY("velocity", "velocity-plugin.json")
+        VELOCITY("velocity", "velocity-plugin.json"),
+        PAPER("paper", "plugin.yml")
     }
 
     enum class Result { AVAILABLE, INSTALLED_RESTART_REQUIRED, DISABLED }
@@ -194,12 +217,13 @@ object PacketEventsBootstrap {
         val proxyName = when (platform) {
             Platform.BUNGEECORD -> "BungeeCord"
             Platform.VELOCITY -> "Velocity"
+            Platform.PAPER -> "Paper/Folia"
         }
         warn.accept("============================================================")
         warn.accept(" pnAuth FIRST-RUN SETUP")
         warn.accept(" PacketEvents was downloaded and SHA-256 verified successfully.")
-        warn.accept(" The proxy is stopping intentionally so $proxyName can load it.")
-        warn.accept(" START THE PROXY ONE MORE TIME to finish enabling pnAuth.")
+        warn.accept(" The server is stopping intentionally so $proxyName can load it.")
+        warn.accept(" START THE SERVER ONE MORE TIME to finish enabling pnAuth.")
         warn.accept(" Automatic process restart requires an external server wrapper.")
         warn.accept(" Settings: plugins/pnAuth/dependencies.yml")
         warn.accept("============================================================")

@@ -21,9 +21,11 @@ import ru.privatenull.pnauth.platform.Proxy
 import ru.privatenull.pnauth.platform.adapter.DeferredAuthBridgeAdapter
 import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.ui.AuthUiCoordinator
+import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Function
 
 /**
  * Paper/Folia runtime wiring for pnAuth.
@@ -36,7 +38,7 @@ class PnAuthPaperRuntime private constructor(
     private var bootstrap: PnAuthBootstrap? = null
     private var display: PaperPlayerDisplay? = null
     private var platform: PaperPlatform? = null
-    private var dialogs: PaperPlayerDialogs? = null
+    private var dialogs: PacketEventsPlayerDialogs? = null
     private var paperSettings: PaperSettings? = null
     private var accessListener: PaperAccessListener? = null
     private var uiCoordinator: AuthUiCoordinator? = null
@@ -53,7 +55,9 @@ class PnAuthPaperRuntime private constructor(
 
             val paperDisplay = PaperPlayerDisplay(plugin, config.messageFormat)
             display = paperDisplay
-            val paperDialogs = PaperPlayerDialogs(plugin)
+            val paperDialogs = PacketEventsPlayerDialogs(
+                Function { uniqueId: UUID -> plugin.server.getPlayer(uniqueId) }
+            ) { message -> plugin.logger.warning(message) }
             dialogs = paperDialogs
             val paperPlatform = PaperPlatform(plugin, paperDisplay, paperDialogs, config.messageFormat)
             platform = paperPlatform

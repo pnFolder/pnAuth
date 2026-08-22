@@ -286,7 +286,7 @@ java -jar pnAuth-hub-1.0.0.jar /path/to/pnauth-hub
 
 Paper/Folia — полноценный самостоятельный режим pnAuth без BungeeCord или Velocity. Плагин сам обрабатывает join, регистрацию, вход, TOTP и native dialog, а до авторизации блокирует настроенные действия игрока.
 
-После завершения асинхронной загрузки профиля Paper автоматически запускает общий auth UI. Native dialog поддерживается на Minecraft `1.21.7+` и календарных версиях `26.x`; на неподдерживаемом клиенте игрок получает оформленную командную подсказку из `messages_<locale>.yml`. Внутренняя команда `_pnauthui` объявлена самим плагином и используется только безопасными действиями `<auth:...>`.
+После завершения асинхронной загрузки профиля Paper автоматически запускает общий auth UI. Native dialog передаётся через единый PacketEvents-транспорт, одинаковый для Paper/Folia, BungeeCord и Velocity; отдельные ванильные команды `dialog show/clear` не используются. На неподдерживаемом клиенте игрок получает оформленную командную подсказку из `messages_<locale>.yml`. Внутренняя команда `_pnauthui` объявлена самим плагином и используется только безопасными действиями `<auth:...>`.
 
 ```yaml
 paper:
@@ -564,7 +564,7 @@ platform.tasks().cancelAll("discord-extension");
 
 `PlayerDialog` повторяет нативную schema Minecraft: общий `DialogLayout`, типы `notice`, `confirmation`, `multi_action`, `server_links`, `dialog_list`; body `plain_message`/`item`; inputs `text`, `boolean`, `single_option`, `number_range`; static и dynamic actions, `exit_action`, columns/button width и все три `after_action`. `response()` ожидает первый ответ, а `onResponse(...)` принимает весь поток submit-событий для `after_action=none`.
 
-На Paper 1.21.7+ pnAuth реально строит inline registry dialog, выполняет Vanilla `dialog show`, принимает `PlayerCustomClickEvent`, декодирует значения и поддерживает `dialog clear`. Более старые клиенты не объявляются native-capable: элементы формы никогда не отбрасываются молча.
+На Paper/Folia pnAuth строит тот же inline registry dialog и отправляет `WrapperPlayServerShowDialog` через PacketEvents, принимает `WrapperPlayClientCustomClickAction`, декодирует значения и безопасно очищает окно пакетом `WrapperPlayServerClearDialog`. Это тот же transport layer, который используется на обеих прокси-платформах; элементы формы никогда не отбрасываются молча.
 
 Для standalone Paper/Folia раздел `paper` в `config.yml` задаёт auth-точку телепортации (`world`, `x/y/z`, `yaw/pitch`) и независимые ограничения `movement`, `chat`, `commands`, `interaction`, `breaking`, `placing`, `inventory`.
 

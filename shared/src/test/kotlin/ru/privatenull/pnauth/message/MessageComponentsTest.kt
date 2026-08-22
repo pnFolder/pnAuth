@@ -28,6 +28,19 @@ class MessageComponentsTest {
     }
 
     @Test
+    fun `auth action remains available with every configured message format`() {
+        MessageFormat.entries.forEach { format ->
+            val component = MessageComponents.deserialize(
+                "<auth:open_dialog><hover:show_text:'Подсказка'>[Повторить]</hover></auth>",
+                format
+            )
+            val json = MessageComponents.serializeJson(component)
+            assertTrue(json.contains("/_pnauthui open"), "missing action for $format")
+            assertTrue(json.contains("show_text"), "missing hover for $format")
+        }
+    }
+
+    @Test
     fun `message renderer does not expose nested hover markup`() {
         val template = "<gray>Ошибка</gray> <auth:open_dialog>" +
             "<hover:show_text:'<gray>Подсказка</gray>'>[Повторить]</hover></auth>"

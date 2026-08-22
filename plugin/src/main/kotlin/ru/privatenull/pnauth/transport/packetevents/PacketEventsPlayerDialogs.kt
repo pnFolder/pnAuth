@@ -35,7 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Consumer
 import java.util.function.Function
 
-/** Complete native dialog transport shared by BungeeCord and Velocity. */
+/** Complete native dialog transport shared by BungeeCord, Velocity and Paper/Folia. */
 class PacketEventsPlayerDialogs @JvmOverloads constructor(
     private val nativePlayer: Function<UUID, Any?>,
     private val diagnostics: Consumer<String> = Consumer { }
