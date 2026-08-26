@@ -1,6 +1,8 @@
 package ru.privatenull.pnauth.config
 
+import org.yaml.snakeyaml.Yaml
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -30,10 +32,12 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         try {
             if (created) yaml.save()
             else yaml.reload()
+            val legacyServerGroups = original?.let { migrateLegacyServerGroups(yaml, it) } ?: false
             migrateProcessingAnimationDefaults(yaml)
             val legacyLimboSource = AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
             val config = AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
-            val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION || legacyLimboSource
+            val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
+                legacyLimboSource || legacyServerGroups
             if (needsSchemaWrite && !created && original != null) {
                 backupBeforeMigration(original)
                 yaml.configVersion = AuthConfig.CURRENT_SCHEMA_VERSION
@@ -60,6 +64,49 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         } finally {
             Files.deleteIfExists(temporary)
         }
+    }
+
+    /** Migrates the v12 single/list server fields into structured server + online entries. */
+    private fun migrateLegacyServerGroups(yaml: PnAuthYamlConfig, original: ByteArray): Boolean {
+        val root = try {
+            Yaml().load<Any>(String(original, StandardCharsets.UTF_8)) as? Map<*, *> ?: return false
+        } catch (_: RuntimeException) {
+            return false
+        }
+        val servers = root["servers"] as? Map<*, *> ?: return false
+        if (servers.containsKey("auth") || servers.containsKey("backend")) return false
+
+        val legacyKeys = setOf(
+            "auth-server", "auth-servers", "backend-server", "backend-servers",
+            "max-players-per-server", "server-limits"
+        )
+        if (servers.keys.none { it?.toString() in legacyKeys }) return false
+
+        val defaultOnline = (servers["max-players-per-server"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 100
+        val onlineLimits = LinkedHashMap<String, Int>()
+        val rawLimits = servers["server-limits"] as? Map<*, *>
+        rawLimits?.forEach { (key, value) ->
+            val name = key?.toString()?.trim().orEmpty()
+            val limit = (value as? Number)?.toInt()
+            if (name.isNotEmpty() && limit != null && limit > 0) onlineLimits[name.lowercase()] = limit
+        }
+
+        fun names(singleKey: String, listKey: String, fallback: String): List<String> {
+            val list = (servers[listKey] as? Collection<*>)
+                ?.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+                .orEmpty()
+            if (list.isNotEmpty()) return list.distinctBy { it.lowercase() }
+            val single = servers[singleKey]?.toString()?.trim().orEmpty()
+            return listOf(if (single.isNotEmpty()) single else fallback)
+        }
+
+        fun targets(names: List<String>): List<PnAuthYamlConfig.ServerTarget> = names.map { name ->
+            PnAuthYamlConfig.ServerTarget(name, onlineLimits[name.lowercase()] ?: defaultOnline)
+        }
+
+        yaml.servers.auth = targets(names("auth-server", "auth-servers", "auth"))
+        yaml.servers.backend = targets(names("backend-server", "backend-servers", "hub"))
+        return true
     }
 
     /** Replaces only the short-lived v9 preset; user-authored frame animations remain untouched. */
@@ -100,6 +147,8 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
     companion object {
         private val REQUIRED_SCHEMA_KEYS = listOf(
             "config-version:",
+            "auth:",
+            "backend:",
             "setup-lifetime-seconds:",
             "restore-on-same-ip:",
             "processing-title:",
