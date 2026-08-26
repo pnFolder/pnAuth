@@ -33,8 +33,9 @@ internal class VelocityAuthTasks(
 
     @Subscribe
     fun onServerPostConnect(event: ServerPostConnectEvent) {
-        if (!event.player.currentServer.map { server -> server.serverInfo.name }
-                .orElse("").equals(proxySettings.authServer, ignoreCase = true)) return
+        if (!proxySettings.isAuthServer(
+                event.player.currentServer.map { server -> server.serverInfo.name }.orElse("")
+            )) return
         val player = event.player
         cancel(player.uniqueId)
         var reminder: ScheduledTask? = null
