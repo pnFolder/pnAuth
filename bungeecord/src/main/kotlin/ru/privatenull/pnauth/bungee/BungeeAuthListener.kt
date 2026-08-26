@@ -2,6 +2,7 @@
 package ru.privatenull.pnauth.bungee
 
 import net.md_5.bungee.api.ProxyServer
+import net.md_5.bungee.api.config.ServerInfo
 import net.md_5.bungee.api.connection.ProxiedPlayer
 import net.md_5.bungee.api.event.ChatEvent
 import net.md_5.bungee.api.event.PlayerDisconnectEvent
@@ -16,10 +17,13 @@ import ru.privatenull.pnauth.api.AdmissionDecision
 import ru.privatenull.pnauth.command.CommandContext
 import ru.privatenull.pnauth.command.CommandRoots
 import ru.privatenull.pnauth.command.CommandService
+import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.flow.AuthLifecycleCoordinator
 import ru.privatenull.pnauth.flow.PlayerConnection
 import ru.privatenull.pnauth.message.AuthMessages
+import ru.privatenull.pnauth.platform.Proxy
 import ru.privatenull.pnauth.policy.AuthAccessService
+import ru.privatenull.pnauth.routing.ServerBalancerFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
 
@@ -29,7 +33,9 @@ class BungeeAuthListener(
     private val lifecycle: AuthLifecycleCoordinator,
     private val messages: AuthMessages,
     private val commands: CommandService,
-    private val dialogs: BungeeDialogListener
+    private val dialogs: BungeeDialogListener,
+    private val proxySettings: ProxySettings,
+    private val proxyAdapter: Proxy? = null
 ) : Listener {
 
     @EventHandler
@@ -80,7 +86,7 @@ class BungeeAuthListener(
         if (lifecycle.server(event.player.uniqueId, event.target.name) == AuthAccessService.ServerAccessDecision.ALLOW) {
             return
         }
-        val authServer = proxy.getServerInfo(lifecycle.authServerName())
+        val authServer = authServer()
         if (authServer == null) {
             event.isCancelled = true
             event.player.sendMessage(*BungeeMessages.components(lifecycle.authServerMissingMessage(), messages.format()))
@@ -141,6 +147,19 @@ class BungeeAuthListener(
                 )
             )
         )
+    }
+
+    private fun authServer(): ServerInfo? {
+        val targets = proxySettings.getEffectiveAuthServers()
+        val balancer = ServerBalancerFactory.create(
+            proxySettings.balancerMode,
+            proxySettings.maxPlayersPerServer,
+            proxySettings.serverLimits
+        )
+        val selected = balancer.selectServer(targets, proxyAdapter).orElse(null)
+            ?: targets.firstOrNull()
+            ?: return null
+        return proxy.getServerInfo(selected)
     }
 
     private fun sendBlocked(player: ProxiedPlayer) {
