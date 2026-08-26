@@ -29,7 +29,7 @@ class BungeeAuthTasks internal constructor(
 
     @EventHandler
     fun onServerConnected(event: ServerConnectedEvent) {
-        if (!event.server.info.name.equals(proxySettings.authServer, ignoreCase = true)) return
+        if (!proxySettings.isAuthServer(event.server.info.name)) return
         val player = event.player
         cancel(player.uniqueId)
         var reminder: ScheduledTask? = null
