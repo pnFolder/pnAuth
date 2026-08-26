@@ -29,7 +29,7 @@ class AuthAccessService(
     }
 
     fun server(uniqueId: UUID, serverName: String): ServerAccessDecision {
-        return if (!proxySettings.requireServerAuth || auth.isAuthenticated(uniqueId) || serverName.equals(proxySettings.authServer, ignoreCase = true)) {
+        return if (!proxySettings.requireServerAuth || auth.isAuthenticated(uniqueId) || proxySettings.isAuthServer(serverName)) {
             ServerAccessDecision.ALLOW
         } else {
             ServerAccessDecision.REDIRECT_TO_AUTH
@@ -45,12 +45,17 @@ class AuthAccessService(
     }
 
     fun authServerMissingMessage(): String {
-        return messages.text("access.auth_server_missing", mapOf("server" to proxySettings.authServer))
+        return messages.text(
+            "access.auth_server_missing",
+            mapOf("server" to proxySettings.authServers.joinToString(", "))
+        )
     }
 
-    fun authServerName(): String {
-        return proxySettings.authServer
-    }
+    fun authServerName(): String = proxySettings.authServer
+
+    fun authServerNames(): List<String> = proxySettings.authServers
+
+    fun isAuthServer(serverName: String?): Boolean = proxySettings.isAuthServer(serverName)
 
     enum class AccessDecision {
         ALLOW,
