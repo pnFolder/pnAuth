@@ -63,7 +63,7 @@ class PnAuthVelocityRuntime private constructor(
             }
             val defaultUrl = "jdbc:sqlite:" + dataDirectory.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
-            validateBackendTargets(config.proxy)
+            validateRoutingTargets(config)
 
             val display = VelocityPlayerDisplay(proxy, config.messageFormat)
             playerDisplay = display
@@ -124,8 +124,9 @@ class PnAuthVelocityRuntime private constructor(
             authTasks = tasks
             proxy.eventManager.register(owner, tasks)
         } catch (exception: Exception) {
-            logger.error("pnAuth could not be initialized", exception)
-            throw IllegalStateException("pnAuth could not be initialized", exception)
+            val reason = exception.message ?: exception::class.simpleName ?: "unknown configuration error"
+            logger.error("pnAuth could not be initialized: $reason", exception)
+            throw IllegalStateException("pnAuth could not be initialized: $reason", exception)
         }
 
         logger.info("pnAuth enabled for Velocity via VelocityProxyAdapter architecture.")
@@ -152,7 +153,7 @@ class PnAuthVelocityRuntime private constructor(
         val defaultUrl = "jdbc:sqlite:" + dataDirectory.resolve("auth.db").toAbsolutePath().normalize()
         try {
             val candidate = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
-            validateBackendTargets(candidate.proxy)
+            validateRoutingTargets(candidate)
             val active = bootstrap?.config
             if (active != null && candidate.limbo != active.limbo) {
                 return message("config.reload.restart-required", mapOf("section" to "limbo"))
@@ -196,16 +197,42 @@ class PnAuthVelocityRuntime private constructor(
     private fun message(key: String, replacements: Map<String, String> = emptyMap()): String =
         bootstrap?.messages?.text(key, replacements) ?: key
 
-    private fun validateBackendTargets(settings: ProxySettings) {
-        if (settings.hasBackendServer() && proxy.getServer(settings.backendServer).isEmpty) {
+    private fun validateRoutingTargets(config: AuthConfig) {
+        val settings = config.proxy
+        val authTargets = settings.getEffectiveAuthServers().distinct()
+        val backendTargets = settings.getEffectiveBackendServers().distinct()
+
+        if (settings.requireServerAuth && authTargets.isEmpty()) {
             throw IllegalArgumentException(
-                "Unknown servers.backend-server '" + settings.backendServer + "'; register that server in velocity.toml"
+                "Authentication routing is enabled, but servers.auth-servers is empty. " +
+                        "Add at least one auth server or disable servers.require-auth-before-server."
             )
         }
+
+        for (target in authTargets) {
+            val isEmbeddedLimbo = config.limbo.enabled && target.equals(config.limbo.serverName, ignoreCase = true)
+            if (!isEmbeddedLimbo && proxy.getServer(target).isEmpty) {
+                throw IllegalArgumentException(
+                    "Authentication server '$target' is configured in servers.auth-servers, but Velocity does not know it. " +
+                            "Register '$target' in velocity.toml, or use limbo.server-name='$target' with limbo.enabled=true."
+                )
+            }
+        }
+
+        for (target in backendTargets) {
+            if (proxy.getServer(target).isEmpty) {
+                throw IllegalArgumentException(
+                    "Backend server '$target' is configured in servers.backend-servers, but Velocity does not know it. " +
+                            "Register '$target' in velocity.toml or remove it from pnAuth config."
+                )
+            }
+        }
+
         for (target in LinkedHashSet(settings.forcedHosts.values)) {
             if (proxy.getServer(target).isEmpty) {
                 throw IllegalArgumentException(
-                    "Unknown servers.forced-hosts target '" + target + "'; register that server in velocity.toml"
+                    "Forced-host target '$target' is configured in servers.forced-hosts, but Velocity does not know it. " +
+                            "Register '$target' in velocity.toml or fix servers.forced-hosts."
                 )
             }
         }
