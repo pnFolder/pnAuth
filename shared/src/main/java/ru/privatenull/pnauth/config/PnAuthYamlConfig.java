@@ -87,11 +87,27 @@ public final class PnAuthYamlConfig extends YamlSerializable {
 
     @NewLine
     public static final class Servers {
-        @Comment(@CommentValue("Registered proxy server used before authentication"))
+        @Comment({
+                @CommentValue("Primary authentication server. It may be a normal Velocity/Bungee backend or an embedded Limbo route."),
+                @CommentValue("Example: auth")
+        })
         public String authServer = "auth";
-        @Comment(@CommentValue("Server a player joins after successful authentication"))
+        @Comment({
+                @CommentValue("Additional authentication servers used as fallbacks."),
+                @CommentValue("Example: [auth-2, auth-3]")
+        })
+        public List<String> authServers = List.of();
+        @Comment({
+                @CommentValue("Primary backend server a player joins after successful authentication."),
+                @CommentValue("Example: hub")
+        })
         public String backendServer = "hub";
-        @Comment(@CommentValue("Keep unauthenticated players on auth-server (recommended for every public network)"))
+        @Comment({
+                @CommentValue("Additional backend servers that pnAuth treats as protected backend routes."),
+                @CommentValue("Example: [survival, skyblock]")
+        })
+        public List<String> backendServers = List.of();
+        @Comment(@CommentValue("Keep unauthenticated players on an authentication server (recommended for every public network)"))
         public boolean requireAuthBeforeServer = true;
         @Comment(@CommentValue("Hostname to backend server mapping"))
         public Map<String, String> forcedHosts = new LinkedHashMap<>();
@@ -254,7 +270,11 @@ public final class PnAuthYamlConfig extends YamlSerializable {
         })
         public String provider = "pico";
         public boolean enabled = false;
-        public String serverName = "auth";
+        @Comment({
+                @CommentValue("Name of the embedded Limbo route. It does NOT have to equal servers.auth-server."),
+                @CommentValue("Add this name to servers.auth-server or servers.auth-servers only when you want players routed through Limbo.")
+        })
+        public String serverName = "auth-limbo";
         public String host = "127.0.0.1";
         public int port = 25_566;
         public boolean autoDownload = true;
