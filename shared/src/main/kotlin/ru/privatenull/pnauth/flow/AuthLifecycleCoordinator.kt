@@ -56,6 +56,8 @@ class AuthLifecycleCoordinator(
     }
 
     fun authServerName(): String = access.authServerName()
+    fun authServerNames(): List<String> = access.authServerNames()
+    fun isAuthServer(serverName: String?): Boolean = access.isAuthServer(serverName)
     fun blockedMessage(): String = access.blockedMessage()
     fun authServerMissingMessage(): String = access.authServerMissingMessage()
     fun message(key: String): String = access.message(key)
