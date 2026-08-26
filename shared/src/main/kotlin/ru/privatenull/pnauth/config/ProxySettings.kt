@@ -2,10 +2,10 @@ package ru.privatenull.pnauth.config
 
 import ru.privatenull.pnauth.routing.ServerBalancerMode
 
-/** Runtime route target: proxy server name plus configured online capacity. */
+/** Runtime/config route target: proxy server name plus configured online capacity. */
 class ServerTarget @JvmOverloads constructor(
-    val server: String = "",
-    val online: Int = 100
+    @JvmField var server: String = "",
+    @JvmField var online: Int = 100
 )
 
 data class ProxySettings(
@@ -42,21 +42,21 @@ data class ProxySettings(
     init {
         if (requireServerAuth && authServers.isEmpty()) {
             throw IllegalArgumentException(
-                "Authentication is required, but servers.auth is empty. " +
+                "Authentication is required, but servers.auth-servers is empty. " +
                         "Add at least one auth route or disable servers.require-auth-before-server."
             )
         }
         if (authServers.any { it.server.isBlank() } || backendServers.any { it.server.isBlank() }) {
-            throw IllegalArgumentException("servers.auth/backend must not contain blank server names")
+            throw IllegalArgumentException("servers.auth-servers/backend-servers must not contain blank server names")
         }
         if (authServers.any { it.online <= 0 } || backendServers.any { it.online <= 0 }) {
-            throw IllegalArgumentException("Every servers.auth/backend online value must be greater than 0")
+            throw IllegalArgumentException("Every server 'online' value must be greater than 0")
         }
         val authNames = authServers.map { it.server.lowercase() }.toSet()
         val conflict = backendServers.firstOrNull { it.server.lowercase() in authNames }
         if (conflict != null) {
             throw IllegalArgumentException(
-                "Server '${conflict.server}' is configured in both servers.auth and servers.backend. " +
+                "Server '${conflict.server}' is configured in both servers.auth-servers and servers.backend-servers. " +
                         "A route must belong to only one group."
             )
         }
