@@ -21,7 +21,9 @@ import ru.privatenull.pnauth.flow.JoinDecision
 import ru.privatenull.pnauth.flow.PlayerConnection
 import ru.privatenull.pnauth.message.AuthMessages
 import ru.privatenull.pnauth.message.MessageFormat
+import ru.privatenull.pnauth.platform.Proxy
 import ru.privatenull.pnauth.policy.AuthAccessService
+import ru.privatenull.pnauth.routing.ServerBalancerFactory
 import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -36,7 +38,8 @@ class VelocityAuthListener(
     private val embeddedAuthServer: RegisteredServer?,
     private val proxySettings: ProxySettings,
     private val dialogs: VelocityDialogCoordinator?,
-    private val messages: AuthMessages
+    private val messages: AuthMessages,
+    private val proxyAdapter: Proxy? = null
 ) {
 
     @Subscribe
@@ -71,7 +74,7 @@ class VelocityAuthListener(
         val player = event.player
         val current = player.currentServer
             .map { connection -> connection.serverInfo.name }.orElse("")
-        if (!current.equals(lifecycle.authServerName(), ignoreCase = true) || auth.isAuthenticated(player.uniqueId)) return
+        if (!proxySettings.isAuthServer(current) || auth.isAuthenticated(player.uniqueId)) return
         val status = auth.status(player.uniqueId)
         val dialogShown = dialogs != null && dialogs.show(player, status)
         val dialogStatus = status == AuthStatus.UNREGISTERED || status == AuthStatus.UNAUTHENTICATED
@@ -148,7 +151,7 @@ class VelocityAuthListener(
 
     @Subscribe
     fun onKickedFromServer(event: KickedFromServerEvent) {
-        if (!event.server.serverInfo.name.equals(lifecycle.authServerName(), ignoreCase = true)) return
+        if (!proxySettings.isAuthServer(event.server.serverInfo.name)) return
         if (auth.isAuthenticated(event.player.uniqueId)) {
             val backend = resolveBackend(event.player)
             if (backend != null) {
@@ -164,17 +167,36 @@ class VelocityAuthListener(
     }
 
     private fun authServer(): RegisteredServer? {
-        return embeddedAuthServer ?: proxy.getServer(lifecycle.authServerName()).orElse(null)
+        if (embeddedAuthServer != null && proxySettings.isAuthServer(embeddedAuthServer.serverInfo.name)) {
+            return embeddedAuthServer
+        }
+        val targets = proxySettings.getEffectiveAuthServers()
+        if (targets.isEmpty()) return null
+        val balancer = ServerBalancerFactory.create(
+            proxySettings.balancerMode,
+            proxySettings.maxPlayersPerServer,
+            proxySettings.serverLimits
+        )
+        val selected = balancer.selectServer(targets, proxyAdapter).orElse(targets.first())
+        return proxy.getServer(selected).orElse(null)
     }
 
     private fun resolveBackend(player: Player): RegisteredServer? {
         if (!proxySettings.hasBackendServer() && proxySettings.forcedHosts.isEmpty()) return null
-        val name = player.virtualHost
-            .map { host ->
-                proxySettings.forcedHosts[host.hostString.lowercase(Locale.ROOT)] ?: proxySettings.backendServer
-            }
-            .orElse(proxySettings.backendServer)
-        return if (name.isNullOrBlank()) null else proxy.getServer(name).orElse(null)
+        val virtualHost = player.virtualHost.orElse(null)
+        if (virtualHost != null) {
+            val forced = proxySettings.forcedHosts[virtualHost.hostString.lowercase(Locale.ROOT)]
+            if (!forced.isNullOrBlank()) return proxy.getServer(forced).orElse(null)
+        }
+        val targets = proxySettings.getEffectiveBackendServers()
+        if (targets.isEmpty()) return null
+        val balancer = ServerBalancerFactory.create(
+            proxySettings.balancerMode,
+            proxySettings.maxPlayersPerServer,
+            proxySettings.serverLimits
+        )
+        val selected = balancer.selectServer(targets, proxyAdapter).orElse(targets.first())
+        return proxy.getServer(selected).orElse(null)
     }
 
     companion object {
