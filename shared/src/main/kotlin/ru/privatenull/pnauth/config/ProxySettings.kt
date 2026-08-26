@@ -17,6 +17,27 @@ data class ProxySettings @JvmOverloads constructor(
     val maxPlayersPerServer: Int = 100,
     val serverLimits: Map<String, Int> = emptyMap()
 ) {
+    /** Compatibility constructor for code written against the pre-v13 single-server model. */
+    constructor(
+        requireServerAuth: Boolean,
+        authServer: String,
+        backendServer: String = "hub",
+        forcedHosts: Map<String, String> = emptyMap(),
+        backendServers: List<String> = if (backendServer.isNotBlank()) listOf(backendServer) else emptyList(),
+        authServers: List<String> = if (authServer.isNotBlank()) listOf(authServer) else emptyList(),
+        balancerMode: ServerBalancerMode = ServerBalancerMode.LEAST_PLAYERS,
+        maxPlayersPerServer: Int = 100,
+        serverLimits: Map<String, Int> = emptyMap()
+    ) : this(
+        requireServerAuth = requireServerAuth,
+        authServers = if (authServers.isNotEmpty()) authServers else authServer.takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
+        backendServers = if (backendServers.isNotEmpty()) backendServers else backendServer.takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
+        forcedHosts = forcedHosts,
+        balancerMode = balancerMode,
+        maxPlayersPerServer = maxPlayersPerServer,
+        serverLimits = serverLimits
+    )
+
     init {
         validateGroup("servers.auth", authServers, required = true)
         validateGroup("servers.backend", backendServers, required = false)
