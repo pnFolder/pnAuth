@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.config
 
+import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -28,18 +29,25 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         val created = Files.notExists(file)
         val schemaComplete = !created && hasRequiredSchemaKeys(file)
         val original = if (created) null else Files.readAllBytes(file)
+        var backupCreated = false
+        val legacyServerDocument = original?.let(::migrateLegacyServerDocument)
+        if (legacyServerDocument != null && original != null) {
+            backupBeforeMigration(original)
+            backupCreated = true
+            Files.writeString(file, legacyServerDocument, StandardCharsets.UTF_8)
+        }
+
         val yaml = PnAuthYamlConfig(file)
         try {
             if (created) yaml.save()
             else yaml.reload()
-            val legacyServerGroups = original?.let { migrateLegacyServerGroups(yaml, it) } ?: false
             migrateProcessingAnimationDefaults(yaml)
             val legacyLimboSource = AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
             val config = AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
             val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
-                legacyLimboSource || legacyServerGroups
+                legacyLimboSource || legacyServerDocument != null
             if (needsSchemaWrite && !created && original != null) {
-                backupBeforeMigration(original)
+                if (!backupCreated) backupBeforeMigration(original)
                 yaml.configVersion = AuthConfig.CURRENT_SCHEMA_VERSION
                 yaml.save()
             }
@@ -66,49 +74,67 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         }
     }
 
-    /** Migrates the v12 single/list server fields into structured server + online entries. */
-    private fun migrateLegacyServerGroups(yaml: PnAuthYamlConfig, original: ByteArray): Boolean {
-        val root = try {
-            Yaml().load<Any>(String(original, StandardCharsets.UTF_8)) as? Map<*, *> ?: return false
+    /** Converts the v12 single/list routing fields before Elytrium sees the removed keys. */
+    private fun migrateLegacyServerDocument(original: ByteArray): String? {
+        val parsed = try {
+            Yaml().load<Any>(String(original, StandardCharsets.UTF_8)) as? Map<*, *> ?: return null
         } catch (_: RuntimeException) {
-            return false
+            return null
         }
-        val servers = root["servers"] as? Map<*, *> ?: return false
-        if (servers.containsKey("auth") || servers.containsKey("backend")) return false
+        val rawServers = parsed["servers"] as? Map<*, *> ?: return null
+        if (rawServers.containsKey("auth") || rawServers.containsKey("backend")) return null
 
         val legacyKeys = setOf(
             "auth-server", "auth-servers", "backend-server", "backend-servers",
             "max-players-per-server", "server-limits"
         )
-        if (servers.keys.none { it?.toString() in legacyKeys }) return false
+        if (rawServers.keys.none { it?.toString() in legacyKeys }) return null
 
-        val defaultOnline = (servers["max-players-per-server"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 100
+        val defaultOnline = (rawServers["max-players-per-server"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 100
         val onlineLimits = LinkedHashMap<String, Int>()
-        val rawLimits = servers["server-limits"] as? Map<*, *>
-        rawLimits?.forEach { (key, value) ->
+        (rawServers["server-limits"] as? Map<*, *>)?.forEach { (key, value) ->
             val name = key?.toString()?.trim().orEmpty()
             val limit = (value as? Number)?.toInt()
-            if (name.isNotEmpty() && limit != null && limit > 0) onlineLimits[name.lowercase()] = limit
+            if (name.isNotEmpty() && limit != null && limit > 0) {
+                onlineLimits[name.lowercase()] = limit
+            }
         }
 
         fun names(singleKey: String, listKey: String, fallback: String): List<String> {
-            val list = (servers[listKey] as? Collection<*>)
-                ?.mapNotNull { item ->
-                    item?.toString()?.trim()?.takeIf { value -> value.isNotEmpty() }
-                }
+            val list = (rawServers[listKey] as? Collection<*>)
+                ?.mapNotNull { item -> item?.toString()?.trim()?.takeIf { it.isNotEmpty() } }
                 .orEmpty()
             if (list.isNotEmpty()) return list.distinctBy { it.lowercase() }
-            val single = servers[singleKey]?.toString()?.trim().orEmpty()
+            val single = rawServers[singleKey]?.toString()?.trim().orEmpty()
             return listOf(if (single.isNotEmpty()) single else fallback)
         }
 
-        fun targets(names: List<String>): List<PnAuthYamlConfig.ServerTarget> = names.map { name ->
-            PnAuthYamlConfig.ServerTarget(name, onlineLimits[name.lowercase()] ?: defaultOnline)
+        fun targets(names: List<String>): List<Map<String, Any>> = names.map { name ->
+            linkedMapOf(
+                "server" to name,
+                "online" to (onlineLimits[name.lowercase()] ?: defaultOnline)
+            )
         }
 
-        yaml.servers.auth = targets(names("auth-server", "auth-servers", "auth"))
-        yaml.servers.backend = targets(names("backend-server", "backend-servers", "hub"))
-        return true
+        val root = LinkedHashMap<String, Any?>()
+        parsed.forEach { (key, value) ->
+            if (key != null) root[key.toString()] = value
+        }
+        val servers = LinkedHashMap<String, Any?>()
+        rawServers.forEach { (key, value) ->
+            val name = key?.toString() ?: return@forEach
+            if (name !in legacyKeys) servers[name] = value
+        }
+        servers["auth"] = targets(names("auth-server", "auth-servers", "auth"))
+        servers["backend"] = targets(names("backend-server", "backend-servers", "hub"))
+        root["servers"] = servers
+
+        val options = DumperOptions().apply {
+            defaultFlowStyle = DumperOptions.FlowStyle.BLOCK
+            isPrettyFlow = true
+            indent = 2
+        }
+        return Yaml(options).dump(root)
     }
 
     /** Replaces only the short-lived v9 preset; user-authored frame animations remain untouched. */
