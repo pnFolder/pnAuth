@@ -156,7 +156,7 @@ class PnAuthBootstrap private constructor(
 
             val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
-            var proxySettings = config.proxy
+            val proxySettings = config.proxy
 
             val limboRegistry = LimboServerRegistry()
             for (provider in limboProviders) {
@@ -165,12 +165,6 @@ class PnAuthBootstrap private constructor(
 
             var limboServer: LimboServer? = retainedLimbo
             if (config.limbo.enabled) {
-                if (!config.proxy.authServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException("proxy.auth-server must equal limbo.server-name when limbo is enabled")
-                }
-                if (config.proxy.backendServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException("servers.backend-server must differ from limbo.server-name")
-                }
                 try {
                     val created = limboServer ?: limboRegistry.create(
                         config.limbo.provider,
@@ -183,11 +177,16 @@ class PnAuthBootstrap private constructor(
                         limboAdapter?.registerRoute(config.limbo.serverName, created.host(), created.port())
                     }
 
-                    proxySettings = proxySettings.requiringServerAuth()
-                    logger.info("PicoLimbo embedded server route '${config.limbo.serverName}' active at ${created.host()}:${created.port()}.")
+                    logger.info(
+                        "Embedded Limbo route '${config.limbo.serverName}' active at ${created.host()}:${created.port()}. " +
+                                "It is independent from the configured auth server pool."
+                    )
                 } catch (exception: Exception) {
                     if (retainedLimbo == null) limboServer?.close()
-                    throw IllegalStateException("Embedded PicoLimbo is enabled but could not be started", exception)
+                    throw IllegalStateException(
+                        "Embedded Limbo is enabled but could not be started. Check limbo.provider, limbo.server-name, host and port.",
+                        exception
+                    )
                 }
             }
 
