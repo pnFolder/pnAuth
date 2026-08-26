@@ -222,7 +222,6 @@ class VelocityDialogCoordinator(
     private fun closeWithError(player: Player, error: String) {
         clear(player)
 
-        // Display error Title & Subtitle on screen
         val titleComp = VelocityMessages.component(messages.text("title.error"), format)
         val subtitleComp = VelocityMessages.component(
             messages.text("subtitle.error", mapOf("error" to visibleText(error))), format
@@ -341,7 +340,7 @@ class VelocityDialogCoordinator(
 
     private fun isOnAuthServer(player: Player): Boolean {
         return player.currentServer.map { connection ->
-            connection.serverInfo.name.equals(proxySettings.authServer, ignoreCase = true)
+            proxySettings.isAuthServer(connection.serverInfo.name)
         }.orElse(false)
     }
 
