@@ -74,7 +74,7 @@ class BungeeDialogListener internal constructor(
     @EventHandler
     fun onServerConnected(event: ServerConnectedEvent) {
         val player = event.player
-        if (!event.server.info.name.equals(proxySettings.authServer, ignoreCase = true)
+        if (!proxySettings.isAuthServer(event.server.info.name)
             || auth.isAuthenticated(player.uniqueId)
         ) {
             clearNativeDialog(player.uniqueId)
@@ -166,7 +166,6 @@ class BungeeDialogListener internal constructor(
             },
             { sendDialogError(player, messages.text("operation-error")) }
         )
-        // Match Java order exactly: show first, then close previous — never clear before show
         val handle = dialogs.show(pnPlayer, form)
         val previous = activeDialogs.put(player.uniqueId, handle)
         previous?.close()
@@ -189,7 +188,7 @@ class BungeeDialogListener internal constructor(
             }
             val status = auth.status(player.uniqueId)
             if (status == AuthStatus.NOT_LOADED || player.server == null
-                || !player.server.info.name.equals(proxySettings.authServer, ignoreCase = true)
+                || !proxySettings.isAuthServer(player.server.info.name)
             ) {
                 if (System.currentTimeMillis() >= deadline) {
                     cancel(player.uniqueId)
@@ -241,7 +240,7 @@ class BungeeDialogListener internal constructor(
 
     private fun isOnAuthServer(player: ProxiedPlayer): Boolean {
         return player.isConnected && player.server != null
-            && player.server.info.name.equals(proxySettings.authServer, ignoreCase = true)
+            && proxySettings.isAuthServer(player.server.info.name)
     }
 
     private fun sendCommandFallback(
@@ -277,7 +276,6 @@ class BungeeDialogListener internal constructor(
     private fun sendDialogError(player: ProxiedPlayer, error: String) {
         clearNativeDialog(player.uniqueId)
 
-        // Display error Title & Subtitle on screen via native BungeeComponentAdapter
         val titleComp = BungeeMessages.component(messages.text("title.error"), messages.format)
         val subtitleComp = BungeeMessages.component(
             messages.text("subtitle.error", mapOf("error" to visibleText(error))), messages.format
