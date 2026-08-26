@@ -126,31 +126,31 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
 
     @NewLine
     class Servers {
-        @Comment(CommentValue("Имя сервера в конфигурации прокси, используемого до авторизации."))
-        @JvmField var authServer: String = "auth"
+        @Comment(
+            CommentValue("Серверы авторизации. Можно указать сколько угодно обычных proxy-серверов и/или маршрут встроенного Limbo."),
+            CommentValue("Пример элемента: { server: auth-1, max-online: 150 }"),
+            CommentValue("Если используется встроенный Limbo, просто добавьте его limbo.server-name как один из элементов списка.")
+        )
+        @JvmField var authServers: List<ServerTarget> = listOf(
+            ServerTarget("auth", 100)
+        )
 
-        @Comment(CommentValue("Сервер, на который игрок попадёт после успешной авторизации."))
-        @JvmField var backendServer: String = "hub"
+        @Comment(
+            CommentValue("Основные серверы после авторизации: lobby/hub и другие точки входа в сеть."),
+            CommentValue("Пример элемента: { server: lobby-1, max-online: 250 }"),
+            CommentValue("Игрок после входа попадает на один из этих серверов, а дальше уже выбирает режим внутри сети.")
+        )
+        @JvmField var backendServers: List<ServerTarget> = listOf(
+            ServerTarget("hub", 200)
+        )
 
-        @Comment(CommentValue("Список основных серверов для балансировки; пустой список использует backend-server."))
-        @JvmField var backendServers: List<String> = ArrayList()
-
-        @Comment(CommentValue("Список auth-серверов для балансировки; пустой список использует auth-server."))
-        @JvmField var authServers: List<String> = ArrayList()
-
-        @Comment(CommentValue("Режим балансировки: LEAST_PLAYERS, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM или FILLING."))
+        @Comment(CommentValue("Режим балансировки: LEAST_PLAYERS, LOWEST_LOAD_PERCENT, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM или FILLING."))
         @JvmField var balancerMode: String = "LEAST_PLAYERS"
 
-        @Comment(CommentValue("Общий лимит игроков на сервер для режима FILLING."))
-        @JvmField var maxPlayersPerServer: Int = 100
-
-        @Comment(CommentValue("Индивидуальные лимиты серверов, например: hub-small: 50, hub-large: 250."))
-        @JvmField var serverLimits: Map<String, Int> = LinkedHashMap()
-
-        @Comment(CommentValue("Запрещает переход с auth-сервера до авторизации. Рекомендуется для публичной сети."))
+        @Comment(CommentValue("Запрещает переход на backend до авторизации. Рекомендуется для публичной сети."))
         @JvmField var requireAuthBeforeServer: Boolean = true
 
-        @Comment(CommentValue("Соответствие домена входа и конечного сервера."))
+        @Comment(CommentValue("Соответствие домена входа и конечного backend-сервера."))
         @JvmField var forcedHosts: Map<String, String> = LinkedHashMap()
     }
 
@@ -374,8 +374,11 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
         @JvmField var provider: String = "pico"
         @Comment(CommentValue("Запускает встроенный limbo-сервер вместе с pnAuth."))
         @JvmField var enabled: Boolean = false
-        @Comment(CommentValue("Имя маршрута limbo в конфигурации прокси."))
-        @JvmField var serverName: String = "auth"
+        @Comment(
+            CommentValue("Имя отдельного маршрута встроенного Limbo."),
+            CommentValue("Оно не обязано совпадать ни с одним auth-сервером. Чтобы использовать Limbo для авторизации, добавьте это имя в servers.auth-servers.")
+        )
+        @JvmField var serverName: String = "auth-limbo"
         @Comment(CommentValue("Адрес, на котором встроенный limbo принимает подключения."))
         @JvmField var host: String = "127.0.0.1"
         @Comment(CommentValue("Порт встроенного limbo-сервера."))
