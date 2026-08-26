@@ -31,7 +31,7 @@ data class AuthConfig(
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 12
+        const val CURRENT_SCHEMA_VERSION = 13
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -78,6 +78,20 @@ data class AuthConfig(
             val processingTitle = ui.processingTitle ?: PnAuthYamlConfig.Ui.ProcessingTitle()
             migrateLegacyPicoLimboSource(limbo)
 
+            val authTargets = serverTargets(servers.auth, "servers.auth", required = true)
+            val backendTargets = serverTargets(servers.backend, "servers.backend", required = false)
+            val serverLimits = LinkedHashMap<String, Int>()
+            for ((name, online) in authTargets + backendTargets) {
+                val existing = serverLimits.putIfAbsent(name, online)
+                if (existing != null && existing != online) {
+                    throw IOException(
+                        "Server '$name' has conflicting online limits ($existing and $online). " +
+                            "Each proxy server must have one online limit."
+                    )
+                }
+            }
+            val defaultServerLimit = serverLimits.values.maxOrNull() ?: 100
+
             val defaults = AuthSettings.defaults()
             val authSettings = AuthSettings(
                 password.minLength,
@@ -98,14 +112,12 @@ data class AuthConfig(
                 authSettings,
                 ProxySettings(
                     servers.requireAuthBeforeServer,
-                    servers.authServer,
-                    servers.backendServer,
+                    authTargets.map { it.first },
+                    backendTargets.map { it.first },
                     lowerCaseKeys(servers.forcedHosts),
-                    servers.backendServers,
-                    servers.authServers,
                     enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),
-                    servers.maxPlayersPerServer,
-                    lowerCaseKeysInt(servers.serverLimits)
+                    defaultServerLimit,
+                    serverLimits
                 ),
                 AccessSettings(
                     access.blockChat,
@@ -216,6 +228,38 @@ data class AuthConfig(
                     source.custom.enabled, source.custom.url.trim(), SecretResolver.resolve(source.custom.secret)
                 )
             )
+        }
+
+        private fun serverTargets(
+            source: List<PnAuthYamlConfig.ServerTarget>?,
+            path: String,
+            required: Boolean
+        ): List<Pair<String, Int>> {
+            val values = source ?: emptyList()
+            if (required && values.isEmpty()) {
+                throw IOException(
+                    "$path must contain at least one server. Example:\n" +
+                        "$path:\n  - server: auth\n    online: 100"
+                )
+            }
+            val result = ArrayList<Pair<String, Int>>(values.size)
+            val seen = HashSet<String>()
+            values.forEachIndexed { index, target ->
+                val name = target.server.trim()
+                if (name.isEmpty()) {
+                    throw IOException("$path[$index].server is empty; specify the proxy server name")
+                }
+                if (target.online < 1) {
+                    throw IOException(
+                        "$path[$index].online for server '$name' must be greater than 0; got ${target.online}"
+                    )
+                }
+                if (!seen.add(name.lowercase(Locale.ROOT))) {
+                    throw IOException("$path contains duplicate server '$name'")
+                }
+                result += name to target.online
+            }
+            return result
         }
 
         private fun storage(
@@ -339,17 +383,6 @@ data class AuthConfig(
             val normalized = value?.trim()?.lowercase(Locale.ROOT) ?: "ru"
             if (normalized == "ru" || normalized == "en") return normalized
             throw IOException("Unsupported locale: $value. Supported locales: ru, en")
-        }
-
-        private fun lowerCaseKeysInt(source: Map<String, Int>?): Map<String, Int> {
-            if (source == null || source.isEmpty()) return emptyMap()
-            val result = LinkedHashMap<String, Int>(source.size)
-            source.forEach { (key, value) ->
-                if (key.isNotBlank()) {
-                    result[key.trim().lowercase(Locale.ROOT)] = value
-                }
-            }
-            return result
         }
 
         private object SetDefaults {
