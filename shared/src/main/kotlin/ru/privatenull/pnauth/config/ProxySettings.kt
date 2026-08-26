@@ -6,12 +6,7 @@ import ru.privatenull.pnauth.routing.ServerBalancerMode
 class ServerTarget @JvmOverloads constructor(
     @JvmField var server: String = "",
     @JvmField var maxOnline: Int = 100
-) {
-    init {
-        require(server.isNotBlank()) { "Server name must not be blank" }
-        require(maxOnline > 0) { "max-online for server '$server' must be greater than 0" }
-    }
-}
+)
 
 data class ProxySettings(
     val requireServerAuth: Boolean,
