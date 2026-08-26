@@ -1,6 +1,8 @@
 package ru.privatenull.pnauth.config
 
+import org.yaml.snakeyaml.Yaml
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -30,10 +32,12 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         try {
             if (created) yaml.save()
             else yaml.reload()
+            val legacyServerGroups = original?.let { migrateLegacyServerGroups(yaml, it) } ?: false
             migrateProcessingAnimationDefaults(yaml)
             val legacyLimboSource = AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
             val config = AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
-            val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION || legacyLimboSource
+            val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
+                legacyLimboSource || legacyServerGroups
             if (needsSchemaWrite && !created && original != null) {
                 backupBeforeMigration(original)
                 yaml.configVersion = AuthConfig.CURRENT_SCHEMA_VERSION
@@ -60,6 +64,61 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         } finally {
             Files.deleteIfExists(temporary)
         }
+    }
+
+    /** Migrates v12 single/list server fields into v13 structured server + online entries. */
+    private fun migrateLegacyServerGroups(yaml: PnAuthYamlConfig, original: ByteArray): Boolean {
+        val root = try {
+            Yaml().load<Any>(String(original, StandardCharsets.UTF_8)) as? Map<*, *> ?: return false
+        } catch (_: RuntimeException) {
+            return false
+        }
+        val servers = root["servers"] as? Map<*, *> ?: return false
+
+        val currentAuth = servers["auth-servers"] as? Collection<*>
+        val currentBackend = servers["backend-servers"] as? Collection<*>
+        val alreadyStructured = sequenceOf(currentAuth, currentBackend)
+            .filterNotNull()
+            .flatten()
+            .any { it is Map<*, *> && it.containsKey("server") }
+        if (alreadyStructured) return false
+
+        val legacyKeys = setOf(
+            "auth-server", "auth-servers", "backend-server", "backend-servers",
+            "max-players-per-server", "server-limits"
+        )
+        if (servers.keys.none { it?.toString() in legacyKeys }) return false
+
+        val defaultOnline = (servers["max-players-per-server"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 100
+        val onlineLimits = LinkedHashMap<String, Int>()
+        val rawLimits = servers["server-limits"] as? Map<*, *>
+        rawLimits?.forEach { (key, value) ->
+            val name = key?.toString()?.trim().orEmpty()
+            val limit = (value as? Number)?.toInt()
+            if (name.isNotEmpty() && limit != null && limit > 0) onlineLimits[name.lowercase()] = limit
+        }
+
+        fun names(singleKey: String, listKey: String, fallback: String): List<String> {
+            val list = (servers[listKey] as? Collection<*>)
+                ?.mapNotNull { entry ->
+                    when (entry) {
+                        is Map<*, *> -> entry["server"]?.toString()?.trim()?.takeIf(String::isNotEmpty)
+                        else -> entry?.toString()?.trim()?.takeIf(String::isNotEmpty)
+                    }
+                }
+                .orEmpty()
+            if (list.isNotEmpty()) return list.distinctBy { it.lowercase() }
+            val single = servers[singleKey]?.toString()?.trim().orEmpty()
+            return listOf(if (single.isNotEmpty()) single else fallback)
+        }
+
+        fun targets(names: List<String>): List<ServerTarget> = names.map { name ->
+            ServerTarget(name, onlineLimits[name.lowercase()] ?: defaultOnline)
+        }
+
+        yaml.servers.authServers = targets(names("auth-server", "auth-servers", "auth"))
+        yaml.servers.backendServers = targets(names("backend-server", "backend-servers", "hub"))
+        return true
     }
 
     /** Replaces only the short-lived v9 preset; user-authored frame animations remain untouched. */
@@ -100,6 +159,8 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
     companion object {
         private val REQUIRED_SCHEMA_KEYS = listOf(
             "config-version:",
+            "auth-servers:",
+            "backend-servers:",
             "setup-lifetime-seconds:",
             "restore-on-same-ip:",
             "processing-title:",
