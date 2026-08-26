@@ -30,8 +30,8 @@ data class ProxySettings @JvmOverloads constructor(
         serverLimits: Map<String, Int> = emptyMap()
     ) : this(
         requireServerAuth = requireServerAuth,
-        authServers = if (authServers.isNotEmpty()) authServers else authServer.takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
-        backendServers = if (backendServers.isNotEmpty()) backendServers else backendServer.takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
+        authServers = if (authServers.isNotEmpty()) authServers else authServer.takeIf { it.isNotBlank() }?.let { listOf(it) }.orEmpty(),
+        backendServers = if (backendServers.isNotEmpty()) backendServers else backendServer.takeIf { it.isNotBlank() }?.let { listOf(it) }.orEmpty(),
         forcedHosts = forcedHosts,
         balancerMode = balancerMode,
         maxPlayersPerServer = maxPlayersPerServer,
