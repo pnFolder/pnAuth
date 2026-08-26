@@ -31,7 +31,7 @@ data class AuthConfig(
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 12
+        const val CURRENT_SCHEMA_VERSION = 13
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -98,14 +98,10 @@ data class AuthConfig(
                 authSettings,
                 ProxySettings(
                     servers.requireAuthBeforeServer,
-                    servers.authServer,
-                    servers.backendServer,
-                    lowerCaseKeys(servers.forcedHosts),
-                    servers.backendServers,
                     servers.authServers,
-                    enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),
-                    servers.maxPlayersPerServer,
-                    lowerCaseKeysInt(servers.serverLimits)
+                    servers.backendServers,
+                    lowerCaseKeys(servers.forcedHosts),
+                    enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS)
                 ),
                 AccessSettings(
                     access.blockChat,
@@ -339,17 +335,6 @@ data class AuthConfig(
             val normalized = value?.trim()?.lowercase(Locale.ROOT) ?: "ru"
             if (normalized == "ru" || normalized == "en") return normalized
             throw IOException("Unsupported locale: $value. Supported locales: ru, en")
-        }
-
-        private fun lowerCaseKeysInt(source: Map<String, Int>?): Map<String, Int> {
-            if (source == null || source.isEmpty()) return emptyMap()
-            val result = LinkedHashMap<String, Int>(source.size)
-            source.forEach { (key, value) ->
-                if (key.isNotBlank()) {
-                    result[key.trim().lowercase(Locale.ROOT)] = value
-                }
-            }
-            return result
         }
 
         private object SetDefaults {
