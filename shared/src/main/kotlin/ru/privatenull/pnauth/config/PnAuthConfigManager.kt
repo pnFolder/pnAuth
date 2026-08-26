@@ -93,7 +93,9 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
 
         fun names(singleKey: String, listKey: String, fallback: String): List<String> {
             val list = (servers[listKey] as? Collection<*>)
-                ?.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+                ?.mapNotNull { item ->
+                    item?.toString()?.trim()?.takeIf { value -> value.isNotEmpty() }
+                }
                 .orEmpty()
             if (list.isNotEmpty()) return list.distinctBy { it.lowercase() }
             val single = servers[singleKey]?.toString()?.trim().orEmpty()
