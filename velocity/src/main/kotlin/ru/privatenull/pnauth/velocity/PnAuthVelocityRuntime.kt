@@ -8,7 +8,6 @@ import org.slf4j.Logger
 import ru.privatenull.pnauth.api.AuthApi
 import ru.privatenull.pnauth.api.PnAuthHandle
 import ru.privatenull.pnauth.config.AuthConfig
-import ru.privatenull.pnauth.config.ProxySettings
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.PnAuthBootstrap
@@ -19,6 +18,7 @@ import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
 import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
 import ru.privatenull.pnauth.velocity.dialog.VelocityDialogCoordinator
 import ru.privatenull.pnauth.velocity.proxy.VelocityProxyAdapter
+import java.io.IOException
 import java.nio.file.Path
 import java.util.UUID
 import java.util.function.Function
@@ -63,7 +63,7 @@ class PnAuthVelocityRuntime private constructor(
             }
             val defaultUrl = "jdbc:sqlite:" + dataDirectory.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
-            validateBackendTargets(config.proxy)
+            validateServerTargets(config)
 
             val display = VelocityPlayerDisplay(proxy, config.messageFormat)
             playerDisplay = display
@@ -112,7 +112,7 @@ class PnAuthVelocityRuntime private constructor(
 
             val listener = VelocityAuthListener(
                 proxy, boot.authService, boot.lifecycleCoordinator, config.messageFormat, null,
-                boot.proxySettings, vDialogs, boot.messages
+                boot.proxySettings, vDialogs, boot.messages, proxyFacade
             )
             authListener = listener
             proxy.eventManager.register(owner, listener)
@@ -124,6 +124,10 @@ class PnAuthVelocityRuntime private constructor(
             authTasks = tasks
             proxy.eventManager.register(owner, tasks)
         } catch (exception: Exception) {
+            if (exception is IOException || exception is ProxyConfigurationException) {
+                logger.error("pnAuth configuration error:\n${exception.message}")
+                return
+            }
             logger.error("pnAuth could not be initialized", exception)
             throw IllegalStateException("pnAuth could not be initialized", exception)
         }
@@ -152,7 +156,7 @@ class PnAuthVelocityRuntime private constructor(
         val defaultUrl = "jdbc:sqlite:" + dataDirectory.resolve("auth.db").toAbsolutePath().normalize()
         try {
             val candidate = AuthConfig.load(dataDirectory.resolve("config.yml"), defaultUrl)
-            validateBackendTargets(candidate.proxy)
+            validateServerTargets(candidate)
             val active = bootstrap?.config
             if (active != null && candidate.limbo != active.limbo) {
                 return message("config.reload.restart-required", mapOf("section" to "limbo"))
@@ -196,20 +200,37 @@ class PnAuthVelocityRuntime private constructor(
     private fun message(key: String, replacements: Map<String, String> = emptyMap()): String =
         bootstrap?.messages?.text(key, replacements) ?: key
 
-    private fun validateBackendTargets(settings: ProxySettings) {
-        if (settings.hasBackendServer() && proxy.getServer(settings.backendServer).isEmpty) {
-            throw IllegalArgumentException(
-                "Unknown servers.backend-server '" + settings.backendServer + "'; register that server in velocity.toml"
-            )
-        }
-        for (target in LinkedHashSet(settings.forcedHosts.values)) {
-            if (proxy.getServer(target).isEmpty) {
-                throw IllegalArgumentException(
-                    "Unknown servers.forced-hosts target '" + target + "'; register that server in velocity.toml"
-                )
+    private fun validateServerTargets(config: AuthConfig) {
+        val errors = ArrayList<String>()
+        val settings = config.proxy
+
+        for (target in settings.getEffectiveAuthServers()) {
+            val providedByEmbeddedLimbo = config.limbo.enabled && target.equals(config.limbo.serverName, ignoreCase = true)
+            if (!providedByEmbeddedLimbo && proxy.getServer(target).isEmpty) {
+                errors += "Auth server '$target' from servers.auth is not registered in velocity.toml. " +
+                    "Register it there, remove it from servers.auth, or use the embedded Limbo route '${config.limbo.serverName}'."
             }
         }
+        for (target in settings.getEffectiveBackendServers()) {
+            if (proxy.getServer(target).isEmpty) {
+                errors += "Backend server '$target' from servers.backend is not registered in velocity.toml. " +
+                    "Register the lobby/backend server or remove it from servers.backend."
+            }
+        }
+        for ((host, target) in settings.forcedHosts) {
+            if (proxy.getServer(target).isEmpty) {
+                errors += "Forced host '$host' points to unknown backend server '$target'. Register that server in velocity.toml."
+            }
+        }
+
+        if (errors.isNotEmpty()) {
+            throw ProxyConfigurationException(
+                "Invalid server routing configuration:\n" + errors.joinToString("\n") { " - $it" }
+            )
+        }
     }
+
+    private class ProxyConfigurationException(message: String) : IllegalArgumentException(message)
 
     companion object {
         fun builder(): Builder = Builder()
