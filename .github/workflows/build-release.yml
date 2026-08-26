@@ -53,9 +53,9 @@ jobs:
     name: Publish GitHub release
     needs: build
     if: >-
-      github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      startsWith(github.event.head_commit.message, 'release:')
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:')))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
