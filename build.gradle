@@ -1,9 +1,10 @@
 plugins {
     id 'com.gradleup.shadow' version '9.6.1' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.1.10' apply false
 }
 
 group = 'ru.privatenull'
-version = '1.0.0'
+version = '1.2.0'
 
 allprojects {
     repositories {
@@ -29,6 +30,7 @@ allprojects {
 
 subprojects {
     apply plugin: 'java-library'
+    apply plugin: 'org.jetbrains.kotlin.jvm'
 
     group = rootProject.group
     version = rootProject.version
@@ -44,13 +46,21 @@ subprojects {
         options.release = 17
     }
 
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+            freeCompilerArgs.add("-Xjvm-default=all")
+        }
+    }
+
     tasks.withType(Test).configureEach {
         useJUnitPlatform()
     }
 }
 
 tasks.register('dist', Sync) {
-    dependsOn ':shared:test', ':plugin:shadowJar'
+    dependsOn ':shared:test', ':plugin:verifyRuntimeLayout', ':hub:shadowJar'
     from(project(':plugin').tasks.named('shadowJar'))
+    from(project(':hub').tasks.named('shadowJar'))
     into layout.buildDirectory.dir('dist')
 }
