@@ -29,7 +29,7 @@ class AuthAccessService(
     }
 
     fun server(uniqueId: UUID, serverName: String): ServerAccessDecision {
-        return if (!proxySettings.requireServerAuth || auth.isAuthenticated(uniqueId) || serverName.equals(proxySettings.authServer, ignoreCase = true)) {
+        return if (!proxySettings.requireServerAuth || auth.isAuthenticated(uniqueId) || proxySettings.isAuthServer(serverName)) {
             ServerAccessDecision.ALLOW
         } else {
             ServerAccessDecision.REDIRECT_TO_AUTH
@@ -45,9 +45,11 @@ class AuthAccessService(
     }
 
     fun authServerMissingMessage(): String {
-        return messages.text("access.auth_server_missing", mapOf("server" to proxySettings.authServer))
+        val servers = proxySettings.getEffectiveAuthServers().joinToString(", ").ifBlank { "<empty>" }
+        return messages.text("access.auth_server_missing", mapOf("server" to servers))
     }
 
+    /** Retained for compatibility; routing code should use the full auth server pool. */
     fun authServerName(): String {
         return proxySettings.authServer
     }
