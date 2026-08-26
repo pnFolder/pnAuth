@@ -156,7 +156,7 @@ class PnAuthBootstrap private constructor(
 
             val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
-            var proxySettings = config.proxy
+            val proxySettings = config.proxy
 
             val limboRegistry = LimboServerRegistry()
             for (provider in limboProviders) {
@@ -165,12 +165,6 @@ class PnAuthBootstrap private constructor(
 
             var limboServer: LimboServer? = retainedLimbo
             if (config.limbo.enabled) {
-                if (!config.proxy.authServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException("proxy.auth-server must equal limbo.server-name when limbo is enabled")
-                }
-                if (config.proxy.backendServer.equals(config.limbo.serverName, ignoreCase = true)) {
-                    throw IllegalArgumentException("servers.backend-server must differ from limbo.server-name")
-                }
                 try {
                     val created = limboServer ?: limboRegistry.create(
                         config.limbo.provider,
@@ -178,13 +172,24 @@ class PnAuthBootstrap private constructor(
                     ).also { it.start() }
                     limboServer = created
 
-                    val routeRegistered = proxyAdapter?.registerServerRoute(config.limbo.serverName, created.host(), created.port()) ?: false
+                    val routeRegistered = proxyAdapter?.registerServerRoute(
+                        config.limbo.serverName,
+                        created.host(),
+                        created.port()
+                    ) ?: false
                     if (!routeRegistered) {
                         limboAdapter?.registerRoute(config.limbo.serverName, created.host(), created.port())
                     }
 
-                    proxySettings = proxySettings.requiringServerAuth()
-                    logger.info("PicoLimbo embedded server route '${config.limbo.serverName}' active at ${created.host()}:${created.port()}.")
+                    logger.info(
+                        "PicoLimbo embedded server route '${config.limbo.serverName}' active at ${created.host()}:${created.port()}."
+                    )
+                    if (!proxySettings.isAuthServer(config.limbo.serverName)) {
+                        logger.warn(
+                            "Embedded Limbo '${config.limbo.serverName}' is enabled but is not listed in servers.auth. " +
+                                "It will stay available as a route but pnAuth will use the configured ordinary auth servers instead."
+                        )
+                    }
                 } catch (exception: Exception) {
                     if (retainedLimbo == null) limboServer?.close()
                     throw IllegalStateException("Embedded PicoLimbo is enabled but could not be started", exception)
