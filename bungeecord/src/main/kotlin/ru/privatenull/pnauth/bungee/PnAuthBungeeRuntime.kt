@@ -1,0 +1,263 @@
+package ru.privatenull.pnauth.bungee
+
+import com.github.retrooper.packetevents.PacketEvents
+import net.md_5.bungee.api.ProxyServer
+import ru.privatenull.pnauth.api.AuthApi
+import ru.privatenull.pnauth.api.PnAuthHandle
+import ru.privatenull.pnauth.bungee.proxy.BungeeProxyAdapter
+import ru.privatenull.pnauth.command.CommandRegistry
+import ru.privatenull.pnauth.config.AuthConfig
+import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
+import ru.privatenull.pnauth.kernel.ExtensionKernel
+import ru.privatenull.pnauth.platform.PnAuthBootstrap
+import ru.privatenull.pnauth.platform.Platform
+import ru.privatenull.pnauth.platform.Proxy
+import ru.privatenull.pnauth.platform.adapter.DeferredAuthBridgeAdapter
+import ru.privatenull.pnauth.platform.adapter.PlatformLoggerAdapter
+import ru.privatenull.pnauth.transport.packetevents.PacketEventsPlayerDialogs
+import java.io.IOException
+import java.nio.file.Path
+import java.util.UUID
+import java.util.function.Function
+
+/**
+ * BungeeCord runtime wiring for pnAuth.
+ *
+ * Keeps `PnAuthBungeePlugin` minimal: the plugin delegates lifecycle and getters to this class.
+ */
+class PnAuthBungeeRuntime private constructor(
+    private val plugin: PnAuthBungeePlugin,
+    private val proxyServer: ProxyServer
+) : PnAuthHandle {
+    private var bootstrap: PnAuthBootstrap? = null
+    private var commandRegistrar: BungeeCommandRegistrar? = null
+    private var listener: BungeeAuthListener? = null
+    private var dialogListener: BungeeDialogListener? = null
+    private var authTasks: BungeeAuthTasks? = null
+    private var playerDisplay: BungeePlayerDisplay? = null
+    private var playerDialogs: PacketEventsPlayerDialogs? = null
+    private var platform: BungeePlatform? = null
+    private var proxyAdapter: BungeeProxyAdapter? = null
+    private var dependencyReady: Boolean = false
+
+    fun onLoad(): Boolean {
+        try {
+            val result = PacketEventsBootstrap.ensure(
+                PacketEventsBootstrap.Platform.BUNGEECORD,
+                plugin.dataFolder.toPath(),
+                plugin.dataFolder.toPath().parent
+            ) { message -> plugin.logger.info(message) }
+            if (result == PacketEventsBootstrap.Result.INSTALLED_RESTART_REQUIRED) {
+                PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.BUNGEECORD, plugin.logger::warning)
+                proxyServer.stop("PacketEvents installed by pnAuth; restart the proxy")
+                return false
+            }
+            dependencyReady = PacketEvents.getAPI() != null && PacketEvents.getAPI().isLoaded
+            if (!dependencyReady) {
+                throw IllegalStateException("PacketEvents is not loaded; enable auto-install or install it manually")
+            }
+            return true
+        } catch (exception: Exception) {
+            throw IllegalStateException("pnAuth could not be initialized", exception)
+        }
+    }
+
+    fun onEnable(retainedLimbo: ru.privatenull.pnauth.limbo.LimboServer? = null) {
+        if (!dependencyReady) return
+        try {
+            val dataFolder: Path = plugin.dataFolder.toPath()
+            val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
+            val config = AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)
+            validateServerTargets(config)
+
+            val display = BungeePlayerDisplay(proxyServer, config.messageFormat)
+            playerDisplay = display
+
+            val dialogs = PacketEventsPlayerDialogs(
+                Function { uniqueId: UUID -> proxyServer.getPlayer(uniqueId) }
+            )
+            playerDialogs = dialogs
+
+            val bungeePlatform = BungeePlatform(plugin, display, config.messageFormat, dialogs)
+            platform = bungeePlatform
+
+            val proxyFacade = BungeeProxyAdapter(plugin, proxyServer, bungeePlatform)
+            proxyAdapter = proxyFacade
+
+            val bridge = DeferredAuthBridgeAdapter()
+
+            val boot = PnAuthBootstrap.builder()
+                .dataFolder(dataFolder)
+                .logger(PlatformLoggerAdapter.of { message -> plugin.logger.info(message) })
+                .platform(bungeePlatform)
+                .display(display)
+                .dialogs(dialogs)
+                .proxy(proxyFacade)
+                .authBridge(bridge)
+                .retainedLimbo(retainedLimbo)
+                .build()
+            bootstrap = boot
+
+            bridge.bind(BungeeAuthActions(proxyServer, boot.proxySettings, boot.messages, proxyFacade))
+
+            val commandRegistry = CommandRegistry()
+            commandRegistry.register(boot.commandService)
+
+            val dListener = BungeeDialogListener(
+                plugin, boot.authService, boot.commandService, boot.messages, config.features, config.processingTitle,
+                config.security.maxPasswordLength, boot.proxySettings, bungeePlatform, commandRegistry
+            )
+            dialogListener = dListener
+
+            val cRegistrar = BungeeCommandRegistrar(
+                plugin, proxyServer.pluginManager, commandRegistry, boot.messages, plugin::reloadConfiguration
+            )
+            commandRegistrar = cRegistrar
+            cRegistrar.register()
+
+            val aListener = BungeeAuthListener(
+                proxyServer, plugin, boot.lifecycleCoordinator, boot.messages, boot.commandService, dListener,
+                boot.proxySettings, proxyFacade
+            )
+            listener = aListener
+
+            authTasks = BungeeAuthTasks(plugin, boot.authService, boot.messages, config.features, boot.proxySettings)
+
+            val pluginManager = proxyServer.pluginManager
+            pluginManager.registerListener(plugin, listener)
+            pluginManager.registerListener(plugin, dialogListener)
+            pluginManager.registerListener(plugin, authTasks)
+
+            plugin.logger.info("pnAuth enabled for BungeeCord via BungeeProxyAdapter architecture.")
+        } catch (exception: Exception) {
+            if (exception is IOException || exception is ProxyConfigurationException) {
+                plugin.logger.severe("pnAuth configuration error:\n${exception.message}")
+                return
+            }
+            throw IllegalStateException("pnAuth could not be initialized", exception)
+        }
+    }
+
+    override fun close() {
+        if (listener != null) {
+            proxyServer.pluginManager.unregisterListener(listener)
+        }
+        if (dialogListener != null) {
+            proxyServer.pluginManager.unregisterListener(dialogListener)
+            dialogListener?.close()
+        }
+        if (authTasks != null) {
+            proxyServer.pluginManager.unregisterListener(authTasks)
+            authTasks?.close()
+        }
+        commandRegistrar?.close()
+        bootstrap?.close()
+        playerDisplay?.close()
+        playerDialogs?.close()
+    }
+
+    @Synchronized
+    fun reloadConfiguration(): String {
+        val configPath = plugin.dataFolder.toPath().resolve("config.yml")
+        val defaultUrl = "jdbc:sqlite:" + plugin.dataFolder.toPath().resolve("auth.db").toAbsolutePath().normalize()
+        try {
+            val candidate = AuthConfig.load(configPath, defaultUrl)
+            validateServerTargets(candidate)
+            val active = bootstrap?.config
+            if (active != null && candidate.limbo != active.limbo) {
+                return message("config.reload.restart-required", mapOf("section" to "limbo"))
+            }
+        } catch (error: Exception) {
+            return message("config.reload.invalid", mapOf("error" to (error.message ?: "ошибка проверки")))
+        }
+        return try {
+            val retainedLimbo = bootstrap?.limbo
+            closeForReload()
+            onEnable(retainedLimbo)
+            message("config.reload.success")
+        } catch (error: Exception) {
+            plugin.logger.log(java.util.logging.Level.SEVERE, "pnAuth reload failed", error)
+            message("config.reload.failed", mapOf("error" to (error.message ?: "неизвестная ошибка")))
+        }
+    }
+
+    private fun closeForReload() {
+        if (listener != null) proxyServer.pluginManager.unregisterListener(listener)
+        if (dialogListener != null) {
+            proxyServer.pluginManager.unregisterListener(dialogListener)
+            dialogListener?.close()
+        }
+        if (authTasks != null) {
+            proxyServer.pluginManager.unregisterListener(authTasks)
+            authTasks?.close()
+        }
+        commandRegistrar?.close()
+        bootstrap?.closeForReload()
+        playerDisplay?.close()
+        playerDialogs?.close()
+    }
+
+    override fun api(): AuthApi = bootstrap?.authService
+        ?: throw IllegalStateException("pnAuth is not enabled")
+
+    override fun kernel(): ExtensionKernel = api()
+
+    override fun platform(): Platform? = platform
+
+    override fun proxy(): Proxy? = proxyAdapter
+
+    fun proxyAdapter(): BungeeProxyAdapter? = proxyAdapter
+
+    private fun message(key: String, replacements: Map<String, String> = emptyMap()): String =
+        bootstrap?.messages?.text(key, replacements) ?: key
+
+    private fun validateServerTargets(config: AuthConfig) {
+        val errors = ArrayList<String>()
+        val settings = config.proxy
+
+        for (target in settings.getEffectiveAuthServers()) {
+            val providedByEmbeddedLimbo = config.limbo.enabled && target.equals(config.limbo.serverName, ignoreCase = true)
+            if (!providedByEmbeddedLimbo && proxyServer.getServerInfo(target) == null) {
+                errors += "Auth server '$target' from servers.auth is not registered in BungeeCord config. " +
+                    "Register it there, remove it from servers.auth, or use the embedded Limbo route '${config.limbo.serverName}'."
+            }
+        }
+        for (target in settings.getEffectiveBackendServers()) {
+            if (proxyServer.getServerInfo(target) == null) {
+                errors += "Backend server '$target' from servers.backend is not registered in BungeeCord config. " +
+                    "Register the lobby/backend server or remove it from servers.backend."
+            }
+        }
+        for ((host, target) in settings.forcedHosts) {
+            if (proxyServer.getServerInfo(target) == null) {
+                errors += "Forced host '$host' points to unknown backend server '$target'. Register that server in BungeeCord config."
+            }
+        }
+
+        if (errors.isNotEmpty()) {
+            throw ProxyConfigurationException(
+                "Invalid server routing configuration:\n" + errors.joinToString("\n") { " - $it" }
+            )
+        }
+    }
+
+    private class ProxyConfigurationException(message: String) : IllegalArgumentException(message)
+
+    companion object {
+        fun builder(): Builder = Builder()
+    }
+
+    class Builder {
+        private var plugin: PnAuthBungeePlugin? = null
+
+        fun plugin(plugin: PnAuthBungeePlugin): Builder {
+            this.plugin = plugin
+            return this
+        }
+
+        fun build(): PnAuthBungeeRuntime {
+            val p = plugin ?: throw IllegalStateException("plugin must be specified")
+            return PnAuthBungeeRuntime(p, p.proxy)
+        }
+    }
+}
