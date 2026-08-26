@@ -2,10 +2,10 @@ package ru.privatenull.pnauth.config
 
 import ru.privatenull.pnauth.routing.ServerBalancerMode
 
-/** One routable proxy server with its configured online capacity. */
+/** Runtime route target: proxy server name plus configured online capacity. */
 class ServerTarget @JvmOverloads constructor(
-    @JvmField var server: String = "",
-    @JvmField var maxOnline: Int = 100
+    val server: String = "",
+    val online: Int = 100
 )
 
 data class ProxySettings(
@@ -42,22 +42,22 @@ data class ProxySettings(
     init {
         if (requireServerAuth && authServers.isEmpty()) {
             throw IllegalArgumentException(
-                "Authentication routing is enabled, but servers.auth-servers is empty. " +
-                        "Add at least one auth server or disable servers.require-auth-before-server."
+                "Authentication is required, but servers.auth is empty. " +
+                        "Add at least one auth route or disable servers.require-auth-before-server."
             )
         }
         if (authServers.any { it.server.isBlank() } || backendServers.any { it.server.isBlank() }) {
-            throw IllegalArgumentException("servers.auth-servers/backend-servers must not contain blank server names")
+            throw IllegalArgumentException("servers.auth/backend must not contain blank server names")
         }
-        if (authServers.any { it.maxOnline <= 0 } || backendServers.any { it.maxOnline <= 0 }) {
-            throw IllegalArgumentException("Every server max-online value must be greater than 0")
+        if (authServers.any { it.online <= 0 } || backendServers.any { it.online <= 0 }) {
+            throw IllegalArgumentException("Every servers.auth/backend online value must be greater than 0")
         }
         val authNames = authServers.map { it.server.lowercase() }.toSet()
         val conflict = backendServers.firstOrNull { it.server.lowercase() in authNames }
         if (conflict != null) {
             throw IllegalArgumentException(
-                "Server '${conflict.server}' is configured as both authentication and backend server. " +
-                        "Move it to only one server group."
+                "Server '${conflict.server}' is configured in both servers.auth and servers.backend. " +
+                        "A route must belong to only one group."
             )
         }
         if (forcedHosts.entries.any { it.key.isBlank() || it.value.isBlank() }) {
@@ -65,11 +65,11 @@ data class ProxySettings(
         }
     }
 
-    /** First auth target retained as a convenience property for older platform adapters. */
+    /** First auth target retained only as a compatibility convenience. */
     val authServer: String
         get() = authServers.firstOrNull()?.server.orEmpty()
 
-    /** First backend target retained as a convenience property for older platform adapters. */
+    /** First backend target retained only as a compatibility convenience. */
     val backendServer: String
         get() = backendServers.firstOrNull()?.server.orEmpty()
 
@@ -77,7 +77,7 @@ data class ProxySettings(
         get() = 100
 
     val serverLimits: Map<String, Int>
-        get() = (authServers + backendServers).associate { it.server to it.maxOnline }
+        get() = (authServers + backendServers).associate { it.server to it.online }
 
     fun getEffectiveBackendServers(): List<String> = backendServers.map { it.server }
 
@@ -96,7 +96,7 @@ data class ProxySettings(
         fun defaults(): ProxySettings = ProxySettings(
             true,
             listOf(ServerTarget("auth", 100)),
-            listOf(ServerTarget("hub", 100)),
+            listOf(ServerTarget("hub", 200)),
             emptyMap()
         )
 
