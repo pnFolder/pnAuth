@@ -31,7 +31,7 @@ data class AuthConfig(
     data class StorageConfig(val url: String, val username: String, val password: String)
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 13
+        const val CURRENT_SCHEMA_VERSION = 14
         private const val LEGACY_FORK_DOWNLOAD =
             "https://github.com/pnFolder/PicoLimbo/releases/download/v1.13.2-pn.2%2Bmc26.2/"
         private const val LEGACY_FORK_SHA256 =
@@ -260,7 +260,7 @@ data class AuthConfig(
             if (required && values.isEmpty()) {
                 throw IOException(
                     "$path must contain at least one server. Example:\n" +
-                        "$path:\n  - server: auth\n    online: 100\n    type: SERVER"
+                        "$path:\n  - server: auth\n    online: 100"
                 )
             }
             val result = ArrayList<ParsedServerTarget>(values.size)
@@ -279,43 +279,16 @@ data class AuthConfig(
                     throw IOException("$path contains duplicate server '$name'")
                 }
 
-                val configuredType = target.type.trim().uppercase(Locale.ROOT)
-                val type = if (configuredType.isEmpty()) {
-                    // Compatibility with v1.2.0: only old entries without type may infer embedded Limbo by route name.
-                    if (allowLimbo && limbo.enabled && name.equals(limbo.serverName, ignoreCase = true)) {
-                        ServerTargetType.LIMBO
-                    } else {
-                        ServerTargetType.SERVER
-                    }
+                val type = if (allowLimbo && limbo.enabled && name.equals(limbo.serverName, ignoreCase = true)) {
+                    ServerTargetType.LIMBO
                 } else {
-                    try {
-                        ServerTargetType.valueOf(configuredType)
-                    } catch (error: IllegalArgumentException) {
-                        throw IOException(
-                            "$path[$index].type for '$name' must be SERVER or LIMBO; got '${target.type}'",
-                            error
-                        )
-                    }
+                    ServerTargetType.SERVER
                 }
 
-                if (type == ServerTargetType.LIMBO) {
-                    if (!allowLimbo) {
-                        throw IOException("$path[$index] cannot use type LIMBO; backend routes must use type SERVER")
-                    }
-                    if (!limbo.enabled) {
-                        throw IOException(
-                            "$path[$index] '$name' uses type LIMBO, but limbo.enabled is false"
-                        )
-                    }
-                    if (!name.equals(limbo.serverName, ignoreCase = true)) {
-                        throw IOException(
-                            "$path[$index] LIMBO route '$name' must match limbo.server-name '${limbo.serverName}'"
-                        )
-                    }
-                } else if (limbo.enabled && name.equals(limbo.serverName, ignoreCase = true) && configuredType.isNotEmpty()) {
+                if (!allowLimbo && limbo.enabled && name.equals(limbo.serverName, ignoreCase = true)) {
                     throw IOException(
-                        "$path[$index] route '$name' is reserved by enabled Limbo. " +
-                            "Use type LIMBO, change limbo.server-name, or disable Limbo."
+                        "$path[$index] route '$name' conflicts with enabled Limbo. " +
+                            "Use a different backend server name or change limbo.server-name."
                     )
                 }
 

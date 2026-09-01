@@ -41,7 +41,7 @@ class AuthConfigTest {
     }
 
     @Test
-    fun configManagerCreatesAndUpdatesDocumentedConfiguration(@TempDir directory: Path) {
+    fun configManagerCreatesDocumentedConfigurationAndNeverRewritesExistingFile(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
         val manager = PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))
 
@@ -51,45 +51,93 @@ class AuthConfigTest {
         assertEquals("ru", created.locale)
         assertTrue(generated.contains("config-version"))
         assertTrue(generated.contains("Версия схемы"))
+        Files.list(directory).use { files ->
+            assertFalse(files.anyMatch { it.fileName.toString().endsWith(".tmp") })
+        }
 
-        Files.writeString(configFile, "locale: en\nmessages:\n  format: PLAIN\n")
+        val edited = "locale: en\nmessages:\n  format: PLAIN\n"
+        Files.writeString(configFile, edited)
         val updated = manager.load()
 
         assertEquals("en", updated.locale)
         assertEquals(MessageFormat.PLAIN, updated.messageFormat)
-        assertTrue(Files.readString(configFile).contains("database:"))
+        assertEquals(edited, Files.readString(configFile))
+        assertFalse(Files.exists(configFile.resolveSibling("config.yml.bak")))
     }
 
     @Test
-    fun upgradesOlderSchemaOnceAndAddsNewTotpSettings(@TempDir directory: Path) {
+    fun repeatedLoadsPreserveEveryByteAndLeaveNoTemporaryFiles(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
-        Files.writeString(configFile, "config-version: 1\nlocale: en\n")
+        val original = """
+            # This comment and the custom ordering must survive every reload.
+            locale: en
+            config-version: 2
+            unknown-extension-setting: keep-me
+            servers:
+              backend-server: custom-hub
+              auth-server: custom-auth
+            """.trimIndent()
+        Files.writeString(configFile, original)
+        val manager = PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))
 
-        PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db")).load()
-        val upgraded = Files.readString(configFile)
+        repeat(5) {
+            val loaded = manager.load()
+            assertEquals(listOf("custom-auth"), loaded.proxy.authServers)
+            assertEquals(listOf("custom-hub"), loaded.proxy.backendServers)
+            assertEquals(original, Files.readString(configFile))
+        }
 
-        assertTrue(upgraded.contains("config-version: " + AuthConfig.CURRENT_SCHEMA_VERSION))
-        assertTrue(upgraded.contains("setup-lifetime-seconds"))
-        assertTrue(upgraded.contains("restore-on-same-ip"))
-        assertEquals("config-version: 1\nlocale: en\n", Files.readString(configFile.resolveSibling("config.yml.bak")))
+        Files.list(directory).use { files ->
+            assertFalse(files.anyMatch { it.fileName.toString().endsWith(".tmp") })
+        }
     }
 
     @Test
-    fun repairsCurrentSchemaWhenRequiredFieldWasRemoved(@TempDir directory: Path) {
+    fun invalidYamlFailsWithoutTouchingSourceOrLeavingTemporaryFiles(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
-        Files.writeString(configFile, """
+        val invalid = "locale: [this is not closed\n"
+        Files.writeString(configFile, invalid)
+
+        assertThrows(IOException::class.java) {
+            PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db")).load()
+        }
+
+        assertEquals(invalid, Files.readString(configFile))
+        Files.list(directory).use { files ->
+            assertFalse(files.anyMatch { it.fileName.toString().endsWith(".tmp") })
+        }
+    }
+
+    @Test
+    fun appliesOlderSchemaDefaultsWithoutRewritingUserFile(@TempDir directory: Path) {
+        val configFile = directory.resolve("config.yml")
+        val original = "config-version: 1\nlocale: en\n"
+        Files.writeString(configFile, original)
+
+        val loaded = PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db")).load()
+
+        assertEquals("en", loaded.locale)
+        assertEquals(original, Files.readString(configFile))
+        assertFalse(Files.exists(configFile.resolveSibling("config.yml.bak")))
+    }
+
+    @Test
+    fun suppliesMissingRuntimeDefaultsWithoutRepairingUserFile(@TempDir directory: Path) {
+        val configFile = directory.resolve("config.yml")
+        val original = """
             config-version: 3
             locale: en
             features:
               totp:
                 setup-lifetime-seconds: 300
-        """.trimIndent())
+        """.trimIndent()
+        Files.writeString(configFile, original)
 
-        PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db")).load()
+        val loaded = PnAuthConfigManager(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db")).load()
 
-        val upgraded = Files.readString(configFile)
-        assertTrue(upgraded.contains("restore-on-same-ip"))
-        assertTrue(Files.exists(configFile.resolveSibling("config.yml.bak")))
+        assertFalse(loaded.features.restoreSessionOnSameIp)
+        assertEquals(original, Files.readString(configFile))
+        assertFalse(Files.exists(configFile.resolveSibling("config.yml.bak")))
     }
 
     @Test
@@ -180,8 +228,8 @@ class AuthConfigTest {
 
         assertEquals(LimboSettings.OFFICIAL_DOWNLOAD_BASE_URL, config.limbo.downloadBaseUrl)
         assertEquals(LimboSettings.OFFICIAL_DOWNLOAD_SHA256, config.limbo.downloadSha256)
-        val migrated = Files.readString(configFile)
-        assertTrue(migrated.contains("github.com/Quozul/PicoLimbo"))
-        assertFalse(migrated.contains("github.com/pnFolder/PicoLimbo"))
+        val persisted = Files.readString(configFile)
+        assertTrue(persisted.contains("github.com/pnFolder/PicoLimbo"))
+        assertFalse(persisted.contains("github.com/Quozul/PicoLimbo"))
     }
 }

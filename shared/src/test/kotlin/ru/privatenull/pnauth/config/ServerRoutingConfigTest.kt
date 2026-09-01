@@ -28,7 +28,8 @@ class ServerRoutingConfigTest {
         assertTrue(generated.contains("backend:"))
         assertTrue(generated.contains("server:"))
         assertTrue(generated.contains("online:"))
-        assertTrue(generated.contains("type: SERVER"))
+        assertFalse(generated.contains("type: SERVER"))
+        assertFalse(generated.contains("type: LIMBO"))
         assertFalse(generated.contains("auth-server:"))
         assertFalse(generated.contains("backend-server:"))
     }
@@ -106,17 +107,12 @@ class ServerRoutingConfigTest {
         assertEquals(150, config.proxy.serverLimits["lobby-a"])
         assertEquals(300, config.proxy.serverLimits["lobby-b"])
 
-        val migrated = Files.readString(configFile)
-        assertTrue(migrated.contains("config-version: 13"))
-        assertTrue(migrated.contains("auth:"))
-        assertTrue(migrated.contains("backend:"))
-        assertFalse(migrated.contains("auth-server:"))
-        assertFalse(migrated.contains("backend-server:"))
-        assertEquals(legacy, Files.readString(configFile.resolveSibling("config.yml.bak")))
+        assertEquals(legacy, Files.readString(configFile))
+        assertFalse(Files.exists(configFile.resolveSibling("config.yml.bak")))
     }
 
     @Test
-    fun readsExplicitServerAndLimboTypes(@TempDir directory: Path) {
+    fun detectsEnabledLimboRouteByConfiguredName(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
         Files.writeString(
             configFile,
@@ -126,14 +122,11 @@ class ServerRoutingConfigTest {
               auth:
                 - server: auth
                   online: 100
-                  type: LIMBO
                 - server: auth-2
                   online: 120
-                  type: SERVER
               backend:
                 - server: lobby
                   online: 200
-                  type: SERVER
             limbo:
               enabled: true
               server-name: auth
@@ -148,6 +141,33 @@ class ServerRoutingConfigTest {
     }
 
     @Test
+    fun acceptsOldTypeFieldsButLeavesThemUntouched(@TempDir directory: Path) {
+        val configFile = directory.resolve("config.yml")
+        val oldConfig = """
+            config-version: 13
+            servers:
+              auth:
+                - server: auth
+                  online: 100
+                  type: LIMBO
+              backend:
+                - server: lobby
+                  online: 200
+                  type: SERVER
+            limbo:
+              enabled: true
+              server-name: auth
+            """.trimIndent()
+        Files.writeString(configFile, oldConfig)
+
+        val config = AuthConfig.load(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))
+
+        assertEquals(ServerTargetType.LIMBO, config.proxy.serverType("auth"))
+        assertEquals(ServerTargetType.SERVER, config.proxy.serverType("lobby"))
+        assertEquals(oldConfig, Files.readString(configFile))
+    }
+
+    @Test
     fun rejectsSameServerInAuthAndBackendBeforeOnlineLimitConflict(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
         Files.writeString(
@@ -158,11 +178,9 @@ class ServerRoutingConfigTest {
               auth:
                 - server: lobby
                   online: 100
-                  type: SERVER
               backend:
                 - server: lobby
                   online: 200
-                  type: SERVER
             """.trimIndent()
         )
 
@@ -173,7 +191,7 @@ class ServerRoutingConfigTest {
     }
 
     @Test
-    fun rejectsLimboAsBackend(@TempDir directory: Path) {
+    fun rejectsBackendNameThatConflictsWithEnabledLimbo(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
         Files.writeString(
             configFile,
@@ -183,11 +201,9 @@ class ServerRoutingConfigTest {
               auth:
                 - server: auth-real
                   online: 100
-                  type: SERVER
               backend:
                 - server: auth
                   online: 100
-                  type: LIMBO
             limbo:
               enabled: true
               server-name: auth
@@ -197,7 +213,7 @@ class ServerRoutingConfigTest {
         val error = org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException::class.java) {
             AuthConfig.load(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))
         }
-        assertTrue(error.message!!.contains("backend routes must use type SERVER"))
+        assertTrue(error.message!!.contains("conflicts with enabled Limbo"))
     }
 
     @Test

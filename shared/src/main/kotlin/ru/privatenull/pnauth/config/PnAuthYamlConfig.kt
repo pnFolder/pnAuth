@@ -11,7 +11,7 @@ import java.nio.file.Path
 
 open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
 
-    @Comment(CommentValue("Версия схемы. Обновляется автоматически; не изменяйте вручную."))
+    @Comment(CommentValue("Версия схемы созданного файла. pnAuth не изменяет существующий config.yml автоматически."))
     @JvmField
     var configVersion: Int = AuthConfig.CURRENT_SCHEMA_VERSION
 
@@ -125,34 +125,27 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     }
 
     class ServerTarget @JvmOverloads constructor(
-        @Comment(CommentValue("Имя маршрута/сервера. Для SERVER имя должно существовать в конфигурации прокси; для LIMBO — совпадать с limbo.server-name."))
+        @Comment(CommentValue("Имя сервера из конфигурации прокси или имя встроенного Limbo из limbo.server-name."))
         @JvmField var server: String = "",
         @Comment(CommentValue("Максимальный online этого сервера для режимов FILLING/LOWEST_LOAD_PERCENT."))
-        @JvmField var online: Int = 100,
-        @Comment(
-            CommentValue("Источник маршрута: SERVER — обычный сервер из конфигурации прокси; LIMBO — встроенный pnAuth Limbo."),
-            CommentValue("В старых конфигах без type pnAuth сохраняет прежнее поведение: совпадение с limbo.server-name распознаётся как LIMBO.")
-        )
-        @JvmField var type: String = ""
+        @JvmField var online: Int = 100
     )
 
     @NewLine
     class Servers {
         @Comment(
-            CommentValue("Маршруты авторизации. Роль AUTH задаётся этой секцией; источник каждого маршрута задаётся полем type."),
-            CommentValue("Обычный сервер: {server: auth-1, online: 100, type: SERVER}."),
-            CommentValue("Встроенный Limbo: {server: auth, online: 100, type: LIMBO}.")
+            CommentValue("Серверы авторизации. Если имя совпадает с включённым limbo.server-name, pnAuth использует встроенный Limbo автоматически."),
+            CommentValue("Пример: {server: auth, online: 100}.")
         )
         @JvmField
-        var auth: List<ServerTarget> = listOf(ServerTarget("auth", 100, "SERVER"))
+        var auth: List<ServerTarget> = listOf(ServerTarget("auth", 100))
 
         @Comment(
             CommentValue("Маршруты после успешной авторизации. Роль BACKEND задаётся этой секцией."),
-            CommentValue("Для backend разрешён только type: SERVER."),
-            CommentValue("Пример: {server: lobby, online: 200, type: SERVER}.")
+            CommentValue("Пример: {server: lobby, online: 200}.")
         )
         @JvmField
-        var backend: List<ServerTarget> = listOf(ServerTarget("hub", 200, "SERVER"))
+        var backend: List<ServerTarget> = listOf(ServerTarget("hub", 200))
 
         @Comment(
             CommentValue("Режим балансировки: LEAST_PLAYERS, LOWEST_LOAD_PERCENT, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM или FILLING."),
