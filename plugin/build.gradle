@@ -23,9 +23,6 @@ configurations {
     adventureSerializerApi
 }
 
-
-
-
 sourceSets {
     main {
         kotlin {
@@ -96,7 +93,7 @@ tasks.named('jar') {
 }
 
 tasks.named('shadowJar') {
-    archiveFileName = "pnAuth-${pluginVersion}.jar"
+    archiveFileName = "pnAuth-${pluginVersion}-universal-java17.jar"
     archiveClassifier = ''
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     filesMatching('META-INF/services/**') {
