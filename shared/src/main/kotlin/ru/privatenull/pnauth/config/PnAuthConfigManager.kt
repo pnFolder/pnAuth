@@ -27,7 +27,6 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         if (parent != null) Files.createDirectories(parent)
 
         val created = Files.notExists(file)
-        val schemaComplete = !created && hasRequiredSchemaKeys(file)
         val original = if (created) null else Files.readAllBytes(file)
         var backupCreated = false
         val legacyServerDocument = original?.let(::migrateLegacyServerDocument)
@@ -44,9 +43,14 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
             migrateProcessingAnimationDefaults(yaml)
             val legacyLimboSource = AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
             val config = AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
-            val needsSchemaWrite = !schemaComplete || yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
+
+            // Never rewrite a current config just because it omits fields that have runtime defaults.
+            // A save here is destructive for hand-edited YAML: the serializer materializes all missing
+            // fields and can replace user formatting/unknown keys with generated defaults. Persist only
+            // when an actual versioned migration changed the document.
+            val needsMigrationWrite = yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
                 legacyLimboSource || legacyServerDocument != null
-            if (needsSchemaWrite && !created && original != null) {
+            if (needsMigrationWrite && !created && original != null) {
                 if (!backupCreated) backupBeforeMigration(original)
                 yaml.configVersion = AuthConfig.CURRENT_SCHEMA_VERSION
                 yaml.save()
@@ -169,25 +173,6 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
             animation.colors = listOf("#7c3aed", "#a855f7", "#6366f1", "#38bdf8", "#7c3aed")
             animation.frameCount = 48
             timings.frameIntervalTicks = 2
-        }
-    }
-
-    companion object {
-        private val REQUIRED_SCHEMA_KEYS = listOf(
-            "config-version:",
-            "auth:",
-            "backend:",
-            "setup-lifetime-seconds:",
-            "restore-on-same-ip:",
-            "processing-title:",
-            "paper:",
-            "external-verification:",
-            "cluster:"
-        )
-
-        private fun hasRequiredSchemaKeys(file: Path): Boolean {
-            val lines = Files.readAllLines(file).map { it.trimStart() }
-            return REQUIRED_SCHEMA_KEYS.all { key -> lines.any { line -> line.startsWith(key) } }
         }
     }
 }
