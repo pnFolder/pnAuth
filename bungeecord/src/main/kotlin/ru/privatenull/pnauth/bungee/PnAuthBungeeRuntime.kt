@@ -216,7 +216,7 @@ class PnAuthBungeeRuntime private constructor(
         val settings = config.proxy
 
         for (target in settings.getEffectiveAuthServers()) {
-            val providedByEmbeddedLimbo = config.limbo.enabled && target.equals(config.limbo.serverName, ignoreCase = true)
+            val providedByEmbeddedLimbo = settings.serverType(target) == ru.privatenull.pnauth.config.ServerTargetType.LIMBO
             if (!providedByEmbeddedLimbo && proxyServer.getServerInfo(target) == null) {
                 errors += "Auth server '$target' from servers.auth is not registered in BungeeCord config. " +
                     "Register it there, remove it from servers.auth, or use the embedded Limbo route '${config.limbo.serverName}'."

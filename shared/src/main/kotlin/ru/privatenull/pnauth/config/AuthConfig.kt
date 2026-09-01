@@ -78,17 +78,29 @@ data class AuthConfig(
             val processingTitle = ui.processingTitle ?: PnAuthYamlConfig.Ui.ProcessingTitle()
             migrateLegacyPicoLimboSource(limbo)
 
-            val authTargets = serverTargets(servers.auth, "servers.auth", required = true)
-            val backendTargets = serverTargets(servers.backend, "servers.backend", required = false)
+            val authTargets = serverTargets(servers.auth, "servers.auth", required = true, allowLimbo = true, limbo = limbo)
+            val backendTargets = serverTargets(servers.backend, "servers.backend", required = false, allowLimbo = false, limbo = limbo)
+
+            val authNames = authTargets.map { it.name.lowercase(Locale.ROOT) }.toSet()
+            val overlap = backendTargets.firstOrNull { it.name.lowercase(Locale.ROOT) in authNames }
+            if (overlap != null) {
+                throw IOException(
+                    "Server '${overlap.name}' cannot be both AUTH (servers.auth) and BACKEND (servers.backend). " +
+                        "Put each server in exactly one routing group."
+                )
+            }
+
             val serverLimits = LinkedHashMap<String, Int>()
-            for ((name, online) in authTargets + backendTargets) {
-                val existing = serverLimits.putIfAbsent(name, online)
-                if (existing != null && existing != online) {
+            val serverTypes = LinkedHashMap<String, ServerTargetType>()
+            for (target in authTargets + backendTargets) {
+                val existing = serverLimits.putIfAbsent(target.name, target.online)
+                if (existing != null && existing != target.online) {
                     throw IOException(
-                        "Server '$name' has conflicting online limits ($existing and $online). " +
+                        "Server '${target.name}' has conflicting online limits ($existing and ${target.online}). " +
                             "Each proxy server must have one online limit."
                     )
                 }
+                serverTypes[target.name.lowercase(Locale.ROOT)] = target.type
             }
             val defaultServerLimit = serverLimits.values.maxOrNull() ?: 100
 
@@ -112,12 +124,13 @@ data class AuthConfig(
                 authSettings,
                 ProxySettings(
                     servers.requireAuthBeforeServer,
-                    authTargets.map { it.first },
-                    backendTargets.map { it.first },
-                    lowerCaseKeys(servers.forcedHosts),
-                    enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),
-                    defaultServerLimit,
-                    serverLimits
+                    authServers = authTargets.map { it.name },
+                    backendServers = backendTargets.map { it.name },
+                    forcedHosts = lowerCaseKeys(servers.forcedHosts),
+                    balancerMode = enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),
+                    maxPlayersPerServer = defaultServerLimit,
+                    serverLimits = serverLimits,
+                    serverTypes = serverTypes
                 ),
                 AccessSettings(
                     access.blockChat,
@@ -230,24 +243,32 @@ data class AuthConfig(
             )
         }
 
+        private data class ParsedServerTarget(
+            val name: String,
+            val online: Int,
+            val type: ServerTargetType
+        )
+
         private fun serverTargets(
             source: List<PnAuthYamlConfig.ServerTarget>?,
             path: String,
-            required: Boolean
-        ): List<Pair<String, Int>> {
+            required: Boolean,
+            allowLimbo: Boolean,
+            limbo: PnAuthYamlConfig.Limbo
+        ): List<ParsedServerTarget> {
             val values = source ?: emptyList()
             if (required && values.isEmpty()) {
                 throw IOException(
                     "$path must contain at least one server. Example:\n" +
-                        "$path:\n  - server: auth\n    online: 100"
+                        "$path:\n  - server: auth\n    online: 100\n    type: SERVER"
                 )
             }
-            val result = ArrayList<Pair<String, Int>>(values.size)
+            val result = ArrayList<ParsedServerTarget>(values.size)
             val seen = HashSet<String>()
             values.forEachIndexed { index, target ->
                 val name = target.server.trim()
                 if (name.isEmpty()) {
-                    throw IOException("$path[$index].server is empty; specify the proxy server name")
+                    throw IOException("$path[$index].server is empty; specify the route/server name")
                 }
                 if (target.online < 1) {
                     throw IOException(
@@ -257,7 +278,48 @@ data class AuthConfig(
                 if (!seen.add(name.lowercase(Locale.ROOT))) {
                     throw IOException("$path contains duplicate server '$name'")
                 }
-                result += name to target.online
+
+                val configuredType = target.type.trim().uppercase(Locale.ROOT)
+                val type = if (configuredType.isEmpty()) {
+                    // Compatibility with v1.2.0: only old entries without type may infer embedded Limbo by route name.
+                    if (allowLimbo && limbo.enabled && name.equals(limbo.serverName, ignoreCase = true)) {
+                        ServerTargetType.LIMBO
+                    } else {
+                        ServerTargetType.SERVER
+                    }
+                } else {
+                    try {
+                        ServerTargetType.valueOf(configuredType)
+                    } catch (error: IllegalArgumentException) {
+                        throw IOException(
+                            "$path[$index].type for '$name' must be SERVER or LIMBO; got '${target.type}'",
+                            error
+                        )
+                    }
+                }
+
+                if (type == ServerTargetType.LIMBO) {
+                    if (!allowLimbo) {
+                        throw IOException("$path[$index] cannot use type LIMBO; backend routes must use type SERVER")
+                    }
+                    if (!limbo.enabled) {
+                        throw IOException(
+                            "$path[$index] '$name' uses type LIMBO, but limbo.enabled is false"
+                        )
+                    }
+                    if (!name.equals(limbo.serverName, ignoreCase = true)) {
+                        throw IOException(
+                            "$path[$index] LIMBO route '$name' must match limbo.server-name '${limbo.serverName}'"
+                        )
+                    }
+                } else if (limbo.enabled && name.equals(limbo.serverName, ignoreCase = true) && configuredType.isNotEmpty()) {
+                    throw IOException(
+                        "$path[$index] route '$name' is reserved by enabled Limbo. " +
+                            "Use type LIMBO, change limbo.server-name, or disable Limbo."
+                    )
+                }
+
+                result += ParsedServerTarget(name, target.online, type)
             }
             return result
         }

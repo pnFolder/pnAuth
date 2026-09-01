@@ -205,7 +205,7 @@ class PnAuthVelocityRuntime private constructor(
         val settings = config.proxy
 
         for (target in settings.getEffectiveAuthServers()) {
-            val providedByEmbeddedLimbo = config.limbo.enabled && target.equals(config.limbo.serverName, ignoreCase = true)
+            val providedByEmbeddedLimbo = settings.serverType(target) == ru.privatenull.pnauth.config.ServerTargetType.LIMBO
             if (!providedByEmbeddedLimbo && proxy.getServer(target).isEmpty) {
                 errors += "Auth server '$target' from servers.auth is not registered in velocity.toml. " +
                     "Register it there, remove it from servers.auth, or use the embedded Limbo route '${config.limbo.serverName}'."

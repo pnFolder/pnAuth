@@ -125,29 +125,34 @@ open class PnAuthYamlConfig(path: Path) : YamlSerializable(path, SERIALIZER) {
     }
 
     class ServerTarget @JvmOverloads constructor(
-        @Comment(CommentValue("Имя сервера ровно как оно зарегистрировано в конфигурации прокси."))
+        @Comment(CommentValue("Имя маршрута/сервера. Для SERVER имя должно существовать в конфигурации прокси; для LIMBO — совпадать с limbo.server-name."))
         @JvmField var server: String = "",
         @Comment(CommentValue("Максимальный online этого сервера для режимов FILLING/LOWEST_LOAD_PERCENT."))
-        @JvmField var online: Int = 100
+        @JvmField var online: Int = 100,
+        @Comment(
+            CommentValue("Источник маршрута: SERVER — обычный сервер из конфигурации прокси; LIMBO — встроенный pnAuth Limbo."),
+            CommentValue("В старых конфигах без type pnAuth сохраняет прежнее поведение: совпадение с limbo.server-name распознаётся как LIMBO.")
+        )
+        @JvmField var type: String = ""
     )
 
     @NewLine
     class Servers {
         @Comment(
-            CommentValue("Серверы авторизации. Это могут быть обычные Minecraft-серверы и/или встроенный Limbo."),
-            CommentValue("Один сервер: auth: [{server: auth, online: 100}]."),
-            CommentValue("Несколько серверов: auth: [{server: auth-1, online: 100}, {server: auth-2, online: 100}].")
+            CommentValue("Маршруты авторизации. Роль AUTH задаётся этой секцией; источник каждого маршрута задаётся полем type."),
+            CommentValue("Обычный сервер: {server: auth-1, online: 100, type: SERVER}."),
+            CommentValue("Встроенный Limbo: {server: auth, online: 100, type: LIMBO}.")
         )
         @JvmField
-        var auth: List<ServerTarget> = listOf(ServerTarget("auth", 100))
+        var auth: List<ServerTarget> = listOf(ServerTarget("auth", 100, "SERVER"))
 
         @Comment(
-            CommentValue("Основные серверы после успешной авторизации: lobby/hub и т.п."),
-            CommentValue("Один сервер: backend: [{server: hub, online: 200}]."),
-            CommentValue("Несколько серверов: backend: [{server: lobby-1, online: 200}, {server: lobby-2, online: 200}].")
+            CommentValue("Маршруты после успешной авторизации. Роль BACKEND задаётся этой секцией."),
+            CommentValue("Для backend разрешён только type: SERVER."),
+            CommentValue("Пример: {server: lobby, online: 200, type: SERVER}.")
         )
         @JvmField
-        var backend: List<ServerTarget> = listOf(ServerTarget("hub", 200))
+        var backend: List<ServerTarget> = listOf(ServerTarget("hub", 200, "SERVER"))
 
         @Comment(
             CommentValue("Режим балансировки: LEAST_PLAYERS, LOWEST_LOAD_PERCENT, FIRST_AVAILABLE, ROUND_ROBIN, RANDOM или FILLING."),
