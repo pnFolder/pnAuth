@@ -26,40 +26,71 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
         val parent = file.parent
         if (parent != null) Files.createDirectories(parent)
 
-        val created = Files.notExists(file)
-        val original = if (created) null else Files.readAllBytes(file)
-        var backupCreated = false
-        val legacyServerDocument = original?.let(::migrateLegacyServerDocument)
-        if (legacyServerDocument != null && original != null) {
-            backupBeforeMigration(original)
-            backupCreated = true
-            Files.writeString(file, legacyServerDocument, StandardCharsets.UTF_8)
+        if (Files.notExists(file)) {
+            val yaml = PnAuthYamlConfig(file)
+            return try {
+                yaml.save()
+                AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
+            } catch (exception: IOException) {
+                throw exception
+            } catch (exception: RuntimeException) {
+                throw IOException("Invalid pnAuth configuration at $file: ${exception.message}", exception)
+            }
         }
 
-        val yaml = PnAuthYamlConfig(file)
+        val original = Files.readAllBytes(file)
+        val originalVersion = readConfigVersion(original)
+        val legacyServerDocument = migrateLegacyServerDocument(original)
+        val loadFile = Files.createTempFile(parent, file.fileName.toString(), ".load.tmp")
+
         try {
-            if (created) yaml.save()
-            else yaml.reload()
+            if (legacyServerDocument != null) {
+                Files.writeString(loadFile, legacyServerDocument, StandardCharsets.UTF_8)
+            } else {
+                Files.write(loadFile, original)
+            }
+
+            // Elytrium Serializer may materialize missing defaults while reloading. Always point it at a
+            // disposable copy so a normal startup/reload can never rewrite the user's current config.yml.
+            val yaml = PnAuthYamlConfig(loadFile)
+            yaml.reload()
             migrateProcessingAnimationDefaults(yaml)
             val legacyLimboSource = AuthConfig.migrateLegacyPicoLimboSource(yaml.limbo)
             val config = AuthConfig.fromYaml(yaml, file, fallbackJdbcUrl)
 
-            // Never rewrite a current config just because it omits fields that have runtime defaults.
-            // A save here is destructive for hand-edited YAML: the serializer materializes all missing
-            // fields and can replace user formatting/unknown keys with generated defaults. Persist only
-            // when an actual versioned migration changed the document.
-            val needsMigrationWrite = yaml.configVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
+            val needsMigrationWrite = originalVersion < AuthConfig.CURRENT_SCHEMA_VERSION ||
                 legacyLimboSource || legacyServerDocument != null
-            if (needsMigrationWrite && !created && original != null) {
-                if (!backupCreated) backupBeforeMigration(original)
+            if (needsMigrationWrite) {
+                backupBeforeMigration(original)
                 yaml.configVersion = AuthConfig.CURRENT_SCHEMA_VERSION
                 yaml.save()
+                replaceConfigAtomically(loadFile)
             }
+
             return config
         } catch (exception: IOException) {
             throw exception
         } catch (exception: RuntimeException) {
             throw IOException("Invalid pnAuth configuration at $file: ${exception.message}", exception)
+        } finally {
+            Files.deleteIfExists(loadFile)
+        }
+    }
+
+    private fun readConfigVersion(original: ByteArray): Int {
+        val parsed = try {
+            Yaml().load<Any>(String(original, StandardCharsets.UTF_8)) as? Map<*, *>
+        } catch (_: RuntimeException) {
+            null
+        }
+        return (parsed?.get("config-version") as? Number)?.toInt() ?: 0
+    }
+
+    private fun replaceConfigAtomically(source: Path) {
+        try {
+            Files.move(source, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            Files.move(source, file, StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -70,7 +101,7 @@ class PnAuthConfigManager(file: Path, fallbackJdbcUrl: String?) {
             Files.write(temporary, original)
             try {
                 Files.move(temporary, backup, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            } catch (ignored: java.nio.file.AtomicMoveNotSupportedException) {
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
                 Files.move(temporary, backup, StandardCopyOption.REPLACE_EXISTING)
             }
         } finally {
