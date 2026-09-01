@@ -98,8 +98,8 @@ jobs:
             exit 1
           fi
           gh release create "v${VERSION}" \
-            build/dist/pnAuth-${VERSION}.jar \
-            build/dist/pnAuth-hub-${VERSION}.jar \
+            build/dist/pnAuth-${VERSION}-universal-java17.jar \
+            build/dist/pnAuth-hub-${VERSION}-universal-java17.jar \
             build/dist/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "$TITLE" \
