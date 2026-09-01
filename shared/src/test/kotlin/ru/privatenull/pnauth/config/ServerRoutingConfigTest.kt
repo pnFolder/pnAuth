@@ -35,9 +35,7 @@ class ServerRoutingConfigTest {
     @Test
     fun readsMultipleAuthAndBackendTargets(@TempDir directory: Path) {
         val configFile = directory.resolve("config.yml")
-        Files.writeString(
-            configFile,
-            """
+        val currentConfig = """
             config-version: 13
             servers:
               auth:
@@ -53,7 +51,7 @@ class ServerRoutingConfigTest {
               balancer-mode: LOWEST_LOAD_PERCENT
               require-auth-before-server: true
             """.trimIndent()
-        )
+        Files.writeString(configFile, currentConfig)
 
         val config = AuthConfig.load(
             configFile,
@@ -68,6 +66,8 @@ class ServerRoutingConfigTest {
         assertEquals(250, config.proxy.serverLimits["lobby-2"])
         assertTrue(config.proxy.isAuthServer("AUTH-2"))
         assertTrue(config.proxy.isBackendServer("Lobby-2"))
+        assertEquals(currentConfig, Files.readString(configFile))
+        assertFalse(Files.exists(configFile.resolveSibling("config.yml.bak")))
     }
 
     @Test
