@@ -2,6 +2,8 @@ package ru.privatenull.pnauth.config
 
 import ru.privatenull.pnauth.routing.ServerBalancerMode
 
+enum class ServerTargetType { SERVER, LIMBO }
+
 /**
  * Proxy routing configuration.
  *
@@ -15,7 +17,8 @@ data class ProxySettings @JvmOverloads constructor(
     val forcedHosts: Map<String, String> = emptyMap(),
     val balancerMode: ServerBalancerMode = ServerBalancerMode.LEAST_PLAYERS,
     val maxPlayersPerServer: Int = 100,
-    val serverLimits: Map<String, Int> = emptyMap()
+    val serverLimits: Map<String, Int> = emptyMap(),
+    val serverTypes: Map<String, ServerTargetType> = emptyMap()
 ) {
     /** Compatibility constructor for code written against the pre-v13 single-server model. */
     constructor(
@@ -35,7 +38,8 @@ data class ProxySettings @JvmOverloads constructor(
         forcedHosts = forcedHosts,
         balancerMode = balancerMode,
         maxPlayersPerServer = maxPlayersPerServer,
-        serverLimits = serverLimits
+        serverLimits = serverLimits,
+        serverTypes = emptyMap()
     )
 
     init {
@@ -88,6 +92,11 @@ data class ProxySettings @JvmOverloads constructor(
     fun isBackendServer(serverName: String?): Boolean {
         if (serverName.isNullOrBlank()) return false
         return backendServers.any { it.equals(serverName, ignoreCase = true) }
+    }
+
+    fun serverType(serverName: String?): ServerTargetType {
+        if (serverName.isNullOrBlank()) return ServerTargetType.SERVER
+        return serverTypes[serverName.lowercase()] ?: ServerTargetType.SERVER
     }
 
     fun requiringServerAuth(): ProxySettings {
