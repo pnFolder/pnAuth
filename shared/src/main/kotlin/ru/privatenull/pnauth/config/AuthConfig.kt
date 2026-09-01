@@ -259,12 +259,8 @@ data class AuthConfig(
             val values = source ?: emptyList()
             if (required && values.isEmpty()) {
                 throw IOException(
-                    "$path must contain at least one server. Example:
-" +
-                        "$path:
-  - server: auth
-    online: 100
-    type: SERVER"
+                    "$path must contain at least one server. Example:\n" +
+                        "$path:\n  - server: auth\n    online: 100\n    type: SERVER"
                 )
             }
             val result = ArrayList<ParsedServerTarget>(values.size)
