@@ -73,6 +73,7 @@ jobs:
         run: |
           VERSION=$(sed -n "s/^version = '\([^']*\)'/\1/p" build.gradle | head -n 1)
           NOTES="docs/releases/v${VERSION}.md"
+          BODY="build/release-body.md"
           if [ -z "$VERSION" ]; then
             echo "Could not read version from build.gradle" >&2
             exit 1
@@ -82,15 +83,16 @@ jobs:
             exit 1
           fi
           TITLE=$(head -n 1 "$NOTES" | sed 's/^# //')
+          tail -n +2 "$NOTES" | sed '1{/^$/d;}' > "$BODY"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "notes=$NOTES" >> "$GITHUB_OUTPUT"
+          echo "body=$BODY" >> "$GITHUB_OUTPUT"
           echo "title=$TITLE" >> "$GITHUB_OUTPUT"
 
       - name: Publish release and tag
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
-          NOTES: ${{ steps.release.outputs.notes }}
+          BODY: ${{ steps.release.outputs.body }}
           TITLE: ${{ steps.release.outputs.title }}
         run: |
           if gh release view "v${VERSION}" >/dev/null 2>&1; then
@@ -103,4 +105,4 @@ jobs:
             build/dist/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "$TITLE" \
-            --notes-file "$NOTES"
+            --notes-file "$BODY"
