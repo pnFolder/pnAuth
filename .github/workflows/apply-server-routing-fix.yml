@@ -1,0 +1,152 @@
+name: Apply server routing fix
+
+on:
+  push:
+    branches:
+      - fix/server-routing-types
+    paths:
+      - .github/workflows/apply-server-routing-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/server-routing-types
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply routing model changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}: {old[:80]!r}, found {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) YAML: every route explicitly exposes its source type.
+          replace_once(
+              'shared/src/main/kotlin/ru/privatenull/pnauth/config/PnAuthYamlConfig.kt',
+              '''    class ServerTarget @JvmOverloads constructor(\n        @Comment(CommentValue("Имя сервера ровно как оно зарегистрировано в конфигурации прокси."))\n        @JvmField var server: String = "",\n        @Comment(CommentValue("Максимальный online этого сервера для режимов FILLING/LOWEST_LOAD_PERCENT."))\n        @JvmField var online: Int = 100\n    )''',
+              '''    class ServerTarget @JvmOverloads constructor(\n        @Comment(CommentValue("Имя маршрута/сервера. Для SERVER имя должно существовать в конфигурации прокси; для LIMBO — совпадать с limbo.server-name."))\n        @JvmField var server: String = "",\n        @Comment(CommentValue("Максимальный online этого сервера для режимов FILLING/LOWEST_LOAD_PERCENT."))\n        @JvmField var online: Int = 100,\n        @Comment(\n            CommentValue("Источник маршрута: SERVER — обычный сервер из конфигурации прокси; LIMBO — встроенный pnAuth Limbo."),\n            CommentValue("В старых конфигах без type pnAuth сохраняет прежнее поведение: совпадение с limbo.server-name распознаётся как LIMBO.")\n        )\n        @JvmField var type: String = ""\n    )'''
+          )
+          replace_once(
+              'shared/src/main/kotlin/ru/privatenull/pnauth/config/PnAuthYamlConfig.kt',
+              '''            CommentValue("Серверы авторизации. Это могут быть обычные Minecraft-серверы и/или встроенный Limbo."),\n            CommentValue("Один сервер: auth: [{server: auth, online: 100}]."),\n            CommentValue("Несколько серверов: auth: [{server: auth-1, online: 100}, {server: auth-2, online: 100}].")''',
+              '''            CommentValue("Маршруты авторизации. Роль AUTH задаётся этой секцией; источник каждого маршрута задаётся полем type."),\n            CommentValue("Обычный сервер: {server: auth-1, online: 100, type: SERVER}."),\n            CommentValue("Встроенный Limbo: {server: auth, online: 100, type: LIMBO}.")'''
+          )
+          replace_once(
+              'shared/src/main/kotlin/ru/privatenull/pnauth/config/PnAuthYamlConfig.kt',
+              'var auth: List<ServerTarget> = listOf(ServerTarget("auth", 100))',
+              'var auth: List<ServerTarget> = listOf(ServerTarget("auth", 100, "SERVER"))'
+          )
+          replace_once(
+              'shared/src/main/kotlin/ru/privatenull/pnauth/config/PnAuthYamlConfig.kt',
+              '''            CommentValue("Основные серверы после успешной авторизации: lobby/hub и т.п."),\n            CommentValue("Один сервер: backend: [{server: hub, online: 200}]."),\n            CommentValue("Несколько серверов: backend: [{server: lobby-1, online: 200}, {server: lobby-2, online: 200}].")''',
+              '''            CommentValue("Маршруты после успешной авторизации. Роль BACKEND задаётся этой секцией."),\n            CommentValue("Для backend разрешён только type: SERVER."),\n            CommentValue("Пример: {server: lobby, online: 200, type: SERVER}.")'''
+          )
+          replace_once(
+              'shared/src/main/kotlin/ru/privatenull/pnauth/config/PnAuthYamlConfig.kt',
+              'var backend: List<ServerTarget> = listOf(ServerTarget("hub", 200))',
+              'var backend: List<ServerTarget> = listOf(ServerTarget("hub", 200, "SERVER"))'
+          )
+
+          # 2) Runtime proxy settings keep route source instead of guessing it later.
+          p = Path('shared/src/main/kotlin/ru/privatenull/pnauth/config/ProxySettings.kt')
+          text = p.read_text()
+          text = text.replace('import ru.privatenull.pnauth.routing.ServerBalancerMode\n', 'import ru.privatenull.pnauth.routing.ServerBalancerMode\n\nenum class ServerTargetType { SERVER, LIMBO }\n', 1)
+          text = text.replace(
+              '    val serverLimits: Map<String, Int> = emptyMap()\n)',
+              '    val serverLimits: Map<String, Int> = emptyMap(),\n    val serverTypes: Map<String, ServerTargetType> = emptyMap()\n)',
+              1
+          )
+          text = text.replace(
+              '        serverLimits = serverLimits\n    )',
+              '        serverLimits = serverLimits,\n        serverTypes = emptyMap()\n    )',
+              1
+          )
+          text = text.replace(
+              '    fun isBackendServer(serverName: String?): Boolean {\n        if (serverName.isNullOrBlank()) return false\n        return backendServers.any { it.equals(serverName, ignoreCase = true) }\n    }',
+              '    fun isBackendServer(serverName: String?): Boolean {\n        if (serverName.isNullOrBlank()) return false\n        return backendServers.any { it.equals(serverName, ignoreCase = true) }\n    }\n\n    fun serverType(serverName: String?): ServerTargetType {\n        if (serverName.isNullOrBlank()) return ServerTargetType.SERVER\n        return serverTypes[serverName.lowercase()] ?: ServerTargetType.SERVER\n    }',
+              1
+          )
+          p.write_text(text)
+
+          # 3) Parse and validate type once in AuthConfig.
+          p = Path('shared/src/main/kotlin/ru/privatenull/pnauth/config/AuthConfig.kt')
+          text = p.read_text()
+          old = '''            val authTargets = serverTargets(servers.auth, "servers.auth", required = true)\n            val backendTargets = serverTargets(servers.backend, "servers.backend", required = false)\n            val serverLimits = LinkedHashMap<String, Int>()\n            for ((name, online) in authTargets + backendTargets) {\n                val existing = serverLimits.putIfAbsent(name, online)\n                if (existing != null && existing != online) {\n                    throw IOException(\n                        "Server '$name' has conflicting online limits ($existing and $online). " +\n                            "Each proxy server must have one online limit."\n                    )\n                }\n            }\n            val defaultServerLimit = serverLimits.values.maxOrNull() ?: 100'''
+          new = '''            val authTargets = serverTargets(servers.auth, "servers.auth", required = true, allowLimbo = true, limbo = limbo)\n            val backendTargets = serverTargets(servers.backend, "servers.backend", required = false, allowLimbo = false, limbo = limbo)\n\n            val authNames = authTargets.map { it.name.lowercase(Locale.ROOT) }.toSet()\n            val overlap = backendTargets.firstOrNull { it.name.lowercase(Locale.ROOT) in authNames }\n            if (overlap != null) {\n                throw IOException(\n                    "Server '${overlap.name}' cannot be both AUTH (servers.auth) and BACKEND (servers.backend). " +\n                        "Put each server in exactly one routing group."\n                )\n            }\n\n            val serverLimits = LinkedHashMap<String, Int>()\n            val serverTypes = LinkedHashMap<String, ServerTargetType>()\n            for (target in authTargets + backendTargets) {\n                val existing = serverLimits.putIfAbsent(target.name, target.online)\n                if (existing != null && existing != target.online) {\n                    throw IOException(\n                        "Server '${target.name}' has conflicting online limits ($existing and ${target.online}). " +\n                            "Each proxy server must have one online limit."\n                    )\n                }\n                serverTypes[target.name.lowercase(Locale.ROOT)] = target.type\n            }\n            val defaultServerLimit = serverLimits.values.maxOrNull() ?: 100'''
+          if old not in text:
+              raise SystemExit('AuthConfig target parsing block not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              '''                    authTargets.map { it.first },\n                    backendTargets.map { it.first },\n                    lowerCaseKeys(servers.forcedHosts),\n                    enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),\n                    defaultServerLimit,\n                    serverLimits\n                ),''',
+              '''                    authServers = authTargets.map { it.name },\n                    backendServers = backendTargets.map { it.name },\n                    forcedHosts = lowerCaseKeys(servers.forcedHosts),\n                    balancerMode = enumValue(servers.balancerMode, ru.privatenull.pnauth.routing.ServerBalancerMode.LEAST_PLAYERS),\n                    maxPlayersPerServer = defaultServerLimit,\n                    serverLimits = serverLimits,\n                    serverTypes = serverTypes\n                ),''',
+              1
+          )
+          pattern = re.compile(r'''        private fun serverTargets\(\n            source: List<PnAuthYamlConfig\.ServerTarget>\?,\n            path: String,\n            required: Boolean\n        \): List<Pair<String, Int>> \{.*?\n        \}\n\n        private fun storage\(''', re.S)
+          replacement = '''        private data class ParsedServerTarget(\n            val name: String,\n            val online: Int,\n            val type: ServerTargetType\n        )\n\n        private fun serverTargets(\n            source: List<PnAuthYamlConfig.ServerTarget>?,\n            path: String,\n            required: Boolean,\n            allowLimbo: Boolean,\n            limbo: PnAuthYamlConfig.Limbo\n        ): List<ParsedServerTarget> {\n            val values = source ?: emptyList()\n            if (required && values.isEmpty()) {\n                throw IOException(\n                    "$path must contain at least one server. Example:\\n" +\n                        "$path:\\n  - server: auth\\n    online: 100\\n    type: SERVER"\n                )\n            }\n            val result = ArrayList<ParsedServerTarget>(values.size)\n            val seen = HashSet<String>()\n            values.forEachIndexed { index, target ->\n                val name = target.server.trim()\n                if (name.isEmpty()) {\n                    throw IOException("$path[$index].server is empty; specify the route/server name")\n                }\n                if (target.online < 1) {\n                    throw IOException(\n                        "$path[$index].online for server '$name' must be greater than 0; got ${target.online}"\n                    )\n                }\n                if (!seen.add(name.lowercase(Locale.ROOT))) {\n                    throw IOException("$path contains duplicate server '$name'")\n                }\n\n                val configuredType = target.type.trim().uppercase(Locale.ROOT)\n                val type = if (configuredType.isEmpty()) {\n                    // Compatibility with v1.2.0: only old entries without type may infer embedded Limbo by route name.\n                    if (allowLimbo && limbo.enabled && name.equals(limbo.serverName, ignoreCase = true)) {\n                        ServerTargetType.LIMBO\n                    } else {\n                        ServerTargetType.SERVER\n                    }\n                } else {\n                    try {\n                        ServerTargetType.valueOf(configuredType)\n                    } catch (error: IllegalArgumentException) {\n                        throw IOException(\n                            "$path[$index].type for '$name' must be SERVER or LIMBO; got '${target.type}'",\n                            error\n                        )\n                    }\n                }\n\n                if (type == ServerTargetType.LIMBO) {\n                    if (!allowLimbo) {\n                        throw IOException("$path[$index] cannot use type LIMBO; backend routes must use type SERVER")\n                    }\n                    if (!limbo.enabled) {\n                        throw IOException(\n                            "$path[$index] '$name' uses type LIMBO, but limbo.enabled is false"\n                        )\n                    }\n                    if (!name.equals(limbo.serverName, ignoreCase = true)) {\n                        throw IOException(\n                            "$path[$index] LIMBO route '$name' must match limbo.server-name '${limbo.serverName}'"\n                        )\n                    }\n                } else if (limbo.enabled && name.equals(limbo.serverName, ignoreCase = true) && configuredType.isNotEmpty()) {\n                    throw IOException(\n                        "$path[$index] route '$name' is reserved by enabled Limbo. " +\n                            "Use type LIMBO, change limbo.server-name, or disable Limbo."\n                    )\n                }\n\n                result += ParsedServerTarget(name, target.online, type)\n            }\n            return result\n        }\n\n        private fun storage('''
+          text2, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'AuthConfig serverTargets function replacement count={count}')
+          p.write_text(text2)
+
+          # 4) Platform validation now trusts explicit type; it no longer guesses from matching names.
+          for runtime in [
+              'velocity/src/main/kotlin/ru/privatenull/pnauth/velocity/PnAuthVelocityRuntime.kt',
+              'bungeecord/src/main/kotlin/ru/privatenull/pnauth/bungee/PnAuthBungeeRuntime.kt',
+          ]:
+              p = Path(runtime)
+              text = p.read_text()
+              old = 'val providedByEmbeddedLimbo = config.limbo.enabled && target.equals(config.limbo.serverName, ignoreCase = true)'
+              new = 'val providedByEmbeddedLimbo = settings.serverType(target) == ru.privatenull.pnauth.config.ServerTargetType.LIMBO'
+              if old not in text:
+                  raise SystemExit(f'Limbo validation expression not found in {runtime}')
+              p.write_text(text.replace(old, new, 1))
+
+          # 5) Tests: generated format, explicit source types, overlap and invalid LIMBO placement.
+          p = Path('shared/src/test/kotlin/ru/privatenull/pnauth/config/ServerRoutingConfigTest.kt')
+          text = p.read_text()
+          text = text.replace(
+              '        assertTrue(generated.contains("online:"))\n',
+              '        assertTrue(generated.contains("online:"))\n        assertTrue(generated.contains("type: SERVER"))\n',
+              1
+          )
+          insertion = '''\n    @Test\n    fun readsExplicitServerAndLimboTypes(@TempDir directory: Path) {\n        val configFile = directory.resolve("config.yml")\n        Files.writeString(\n            configFile,\n            """\n            config-version: 13\n            servers:\n              auth:\n                - server: auth\n                  online: 100\n                  type: LIMBO\n                - server: auth-2\n                  online: 120\n                  type: SERVER\n              backend:\n                - server: lobby\n                  online: 200\n                  type: SERVER\n            limbo:\n              enabled: true\n              server-name: auth\n            """.trimIndent()\n        )\n\n        val config = AuthConfig.load(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))\n\n        assertEquals(ServerTargetType.LIMBO, config.proxy.serverType("auth"))\n        assertEquals(ServerTargetType.SERVER, config.proxy.serverType("auth-2"))\n        assertEquals(ServerTargetType.SERVER, config.proxy.serverType("lobby"))\n    }\n\n    @Test\n    fun rejectsSameServerInAuthAndBackendBeforeOnlineLimitConflict(@TempDir directory: Path) {\n        val configFile = directory.resolve("config.yml")\n        Files.writeString(\n            configFile,\n            """\n            config-version: 13\n            servers:\n              auth:\n                - server: lobby\n                  online: 100\n                  type: SERVER\n              backend:\n                - server: lobby\n                  online: 200\n                  type: SERVER\n            """.trimIndent()\n        )\n\n        val error = org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException::class.java) {\n            AuthConfig.load(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))\n        }\n        assertTrue(error.message!!.contains("cannot be both AUTH"))\n    }\n\n    @Test\n    fun rejectsLimboAsBackend(@TempDir directory: Path) {\n        val configFile = directory.resolve("config.yml")\n        Files.writeString(\n            configFile,\n            """\n            config-version: 13\n            servers:\n              auth:\n                - server: auth-real\n                  online: 100\n                  type: SERVER\n              backend:\n                - server: auth\n                  online: 100\n                  type: LIMBO\n            limbo:\n              enabled: true\n              server-name: auth\n            """.trimIndent()\n        )\n\n        val error = org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException::class.java) {\n            AuthConfig.load(configFile, "jdbc:sqlite:" + directory.resolve("fallback.db"))\n        }\n        assertTrue(error.message!!.contains("backend routes must use type SERVER"))\n    }\n'''
+          marker = '\n    @Test\n    fun keepsLegacyProxySettingsConstructorForInternalCompatibility() {'
+          if marker not in text:
+              raise SystemExit('Test insertion marker not found')
+          text = text.replace(marker, insertion + marker, 1)
+          p.write_text(text)
+
+          # Remove this one-shot workflow from the resulting commit.
+          Path('.github/workflows/apply-server-routing-fix.yml').unlink()
+          PY
+
+      - name: Test and build
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon clean dist
+
+      - name: Commit tested changes
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: make server route types explicit"
+          git push origin HEAD:fix/server-routing-types
