@@ -1,0 +1,41 @@
+name: Diagnostic build
+
+on:
+  push:
+    branches:
+      - diag/1.2.1-build
+    paths:
+      - .github/workflows/diag-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diag/1.2.1-build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Capture Gradle output
+        shell: bash
+        run: |
+          set +e
+          chmod +x ./gradlew
+          ./gradlew --no-daemon clean dist --stacktrace 2>&1 | tee build.log
+          STATUS=${PIPESTATUS[0]}
+          echo "$STATUS" > build.status
+          exit 0
+      - name: Save diagnostics
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add build.log build.status
+          git commit -m "chore: save 1.2.1 build diagnostics"
+          git push origin HEAD:diag/1.2.1-build
