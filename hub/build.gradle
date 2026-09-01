@@ -14,7 +14,7 @@ application {
 }
 
 tasks.named('shadowJar') {
-    archiveFileName = "pnAuth-hub-${project.version}.jar"
+    archiveFileName = "pnAuth-hub-${project.version}-universal-java17.jar"
     archiveClassifier = ''
     mergeServiceFiles()
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
