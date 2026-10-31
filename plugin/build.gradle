@@ -4,6 +4,7 @@ plugins {
 }
 
 def pluginVersion = version.toString()
+def pnLibraryVersion = '0.0.1-dev.6'
 def generatedSources = layout.buildDirectory.dir('generated/sources/pnauth')
 configurations.runtimeClasspath {
     // PacketEvents is a required external plugin and owns Adventure on BungeeCord.
@@ -74,6 +75,12 @@ dependencies {
     compileOnly 'com.github.retrooper:packetevents-bungeecord:2.13.1-SNAPSHOT'
     compileOnly 'com.github.retrooper:packetevents-spigot:2.13.0'
     kapt 'com.velocitypowered:velocity-api:3.3.0-SNAPSHOT'
+    // The shared runtime plugin is installed by the pnLibrary bootstrap that is shaded into the jar;
+    // only its public API is needed to compile.
+    implementation "io.github.pnfolder:pnlibrary-bootstrap-bukkit:${pnLibraryVersion}"
+    implementation "io.github.pnfolder:pnlibrary-bootstrap-bungee:${pnLibraryVersion}"
+    implementation "io.github.pnfolder:pnlibrary-bootstrap-velocity:${pnLibraryVersion}"
+    compileOnly "io.github.pnfolder:pnlibrary-api:${pnLibraryVersion}"
     implementation project(':shared')
     implementation 'net.kyori:adventure-text-minimessage:4.26.1'
     implementation 'net.kyori:adventure-text-serializer-gson:4.26.1'
@@ -109,6 +116,11 @@ tasks.named('shadowJar') {
     relocate 'org.yaml.snakeyaml', 'ru.privatenull.pnauth.libs.snakeyaml'
     relocate 'net.elytrium.serializer', 'ru.privatenull.pnauth.libs.serializer'
     relocate 'com.fasterxml.jackson', 'ru.privatenull.pnauth.libs.jackson'
+    relocate 'org.pnfolder.pnlibrary.bootstrap', 'ru.privatenull.pnauth.libs.pnbootstrap'
+    relocate 'org.pnfolder.pnlibrary.bukkit.bootstrap', 'ru.privatenull.pnauth.libs.pnbootstrap.bukkit'
+    relocate 'org.pnfolder.pnlibrary.bungee.bootstrap', 'ru.privatenull.pnauth.libs.pnbootstrap.bungee'
+    relocate 'org.pnfolder.pnlibrary.velocity.bootstrap', 'ru.privatenull.pnauth.libs.pnbootstrap.velocity'
+    relocate 'org.pnfolder.pnlibrary.console', 'ru.privatenull.pnauth.libs.pnbootstrap.console'
     manifest {
         attributes(
                 'Implementation-Title': 'pnAuth',

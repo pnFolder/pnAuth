@@ -5,7 +5,7 @@ api-version: '1.20'
 folia-supported: true
 author: privatenull
 description: Extensible authentication and player API for Paper and Folia.
-softdepend: [packetevents]
+softdepend: [packetevents, pnLibrary]
 commands:
   _pnauthui:
     description: Internal pnAuth UI action dispatcher.
@@ -26,4 +26,25 @@ commands:
 permissions:
   pnauth.admin.reload:
     description: Allows reloading the pnAuth configuration.
+    default: op
+  pnauth.admin.commands.unregister:
+    description: Allows /auth unregister.
+    default: op
+  pnauth.admin.commands.changepassword:
+    description: Allows /auth changepassword.
+    default: op
+  pnauth.admin.commands.forcelogin:
+    description: Allows /auth forcelogin.
+    default: op
+  pnauth.admin.commands.forceregister:
+    description: Allows /auth forceregister.
+    default: op
+  pnauth.admin.commands.forcepremium:
+    description: Allows /auth forcepremium.
+    default: op
+  pnauth.admin.commands.broadcast:
+    description: Allows /auth broadcast.
+    default: op
+  pnauth.admin.commands.migrate:
+    description: Allows /auth migrate.
     default: op
