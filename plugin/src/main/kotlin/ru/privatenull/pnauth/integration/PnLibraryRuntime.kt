@@ -31,6 +31,8 @@ class PnLibraryRuntime private constructor(
         registration = created
         try {
             module = created.registerModule(MODULE_ID) { builder ->
+                // bStats держит отдельный проект на каждую платформу; без ID платформы метрики не включаются.
+                BSTATS_PROJECT_IDS[platform]?.let { id -> builder.metrics { metrics -> metrics.bStats(id) } }
                 builder
                     // A policy that cannot be checked (offline, JRE without a compiler) never stops pnAuth;
                     // only an explicit denial from the policy does.
@@ -41,7 +43,6 @@ class PnLibraryRuntime private constructor(
                             .support(PnLibraryIdentity.SUPPORT_URL)
                             .build()
                     )
-                    .metrics { metrics -> metrics.bStats(BSTATS_PROJECT_ID) }
                     .diagnostics(
                         dataFolder,
                         DiagnosticContainer.builder(MODULE_ID)
@@ -92,7 +93,8 @@ class PnLibraryRuntime private constructor(
     companion object {
         const val MINIMUM_VERSION = "0.0.1-dev.6"
         private const val MODULE_ID = "pnauth"
-        private const val BSTATS_PROJECT_ID = 35046
+        // Ключ - название платформы, которое передаёт плагин. Для BungeeCord и Velocity нужны свои проекты в bStats.
+        private val BSTATS_PROJECT_IDS: Map<String, Int> = mapOf("Paper" to 35046)
         private const val POLICY_SOURCE =
             "https://raw.githubusercontent.com/pnFolder/pnlibrary-policy/main/.pnlibrary/policies/PnAuthPolicy.java"
         private const val ARTIFACT_PATTERN = "(?i)^pnAuth-[0-9].*[.]jar$"
