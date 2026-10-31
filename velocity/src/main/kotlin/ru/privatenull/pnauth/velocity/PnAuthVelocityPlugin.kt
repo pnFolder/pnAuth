@@ -9,7 +9,9 @@ import com.velocitypowered.api.plugin.Dependency
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.plugin.annotation.DataDirectory
 import com.velocitypowered.api.proxy.ProxyServer
+import org.pnfolder.pnlibrary.velocity.bootstrap.PnLibraryBootstrap
 import org.slf4j.Logger
+import ru.privatenull.pnauth.integration.PnLibraryRuntime
 import ru.privatenull.pnauth.api.AuthApi
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.Platform
@@ -21,7 +23,7 @@ import java.nio.file.Path
     name = "pnAuth",
     version = PnAuthBuild.VERSION,
     authors = ["privatenull"],
-    dependencies = [Dependency(id = "packetevents", optional = true)]
+    dependencies = [Dependency(id = "packetevents", optional = true), Dependency(id = "pnlibrary", optional = true)]
 )
 class PnAuthVelocityPlugin @Inject constructor(
     private val proxy: ProxyServer,
@@ -29,9 +31,17 @@ class PnAuthVelocityPlugin @Inject constructor(
     @DataDirectory private val dataDirectory: Path
 ) {
     private var runtime: PnAuthVelocityRuntime? = null
+    private var pnLibrary: PnLibraryRuntime? = null
 
     @Subscribe
     fun onProxyInitialization(event: ProxyInitializeEvent) {
+        // A missing pnLibrary is downloaded for the next start; pnAuth itself keeps working without it.
+        val pnLibraryReady = try {
+            PnLibraryBootstrap.ensureInstalled(proxy, this, PnLibraryRuntime.MINIMUM_VERSION)
+        } catch (failure: Throwable) {
+            logger.warn("Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
+            false
+        }
         val created = PnAuthVelocityRuntime.builder()
             .owner(this)
             .proxy(proxy)
@@ -40,6 +50,25 @@ class PnAuthVelocityPlugin @Inject constructor(
             .build()
         runtime = created
         created.onProxyInitialization()
+        if (pnLibraryReady) connectPnLibrary()
+    }
+
+    private fun connectPnLibrary() {
+        try {
+            val connected = PnLibraryRuntime.connect(this)
+            pnLibrary = connected
+            connected.register(dataDirectory, "Velocity") { mapOf("version" to PnAuthBuild.VERSION) }
+            connected.enabled("Velocity")
+        } catch (failure: Throwable) {
+            logger.warn("pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
+            closePnLibrary()
+        }
+    }
+
+    private fun closePnLibrary() {
+        val closing = pnLibrary ?: return
+        pnLibrary = null
+        runCatching { closing.close() }
     }
 
     @Subscribe
@@ -49,6 +78,7 @@ class PnAuthVelocityPlugin @Inject constructor(
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
+        closePnLibrary()
         runtime?.close()
     }
 

@@ -5,14 +5,26 @@ import org.bukkit.plugin.java.JavaPlugin
 import ru.privatenull.pnauth.api.AuthApi
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.Platform
+import org.pnfolder.pnlibrary.bukkit.bootstrap.PnLibraryBootstrap
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
+import ru.privatenull.pnauth.integration.PnLibraryRuntime
+import java.util.logging.Level
 
 /** Paper/Folia bootstrap. All reusable behavior remains in the shared module. */
 class PnAuthPaperPlugin : JavaPlugin() {
     private var runtime: PnAuthPaperRuntime? = null
     private var dependencyReady = false
+    private var pnLibraryReady = false
+    private var pnLibrary: PnLibraryRuntime? = null
 
     override fun onLoad() {
+        // pnAuth keeps protecting the server even when pnLibrary cannot be prepared; only the shared services go missing.
+        pnLibraryReady = try {
+            PnLibraryBootstrap.ensureInstalled(this, PnLibraryRuntime.MINIMUM_VERSION)
+        } catch (failure: Throwable) {
+            logger.log(Level.WARNING, "Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
+            false
+        }
         val result = PacketEventsBootstrap.ensure(
             PacketEventsBootstrap.Platform.PAPER,
             dataFolder.toPath(),
@@ -36,9 +48,37 @@ class PnAuthPaperPlugin : JavaPlugin() {
         val created = PnAuthPaperRuntime.builder().plugin(this).build()
         runtime = created
         created.onEnable()
+        connectPnLibrary()
     }
 
+    private fun connectPnLibrary() {
+        if (!pnLibraryReady) return
+        try {
+            val connected = PnLibraryRuntime.connect(this)
+            pnLibrary = connected
+            connected.register(dataFolder.toPath(), "Paper") {
+                mapOf("version" to description.version, "folia" to isFolia())
+            }
+            connected.enabled("Paper")
+            server.pluginManager.registerEvents(PnLibraryLifecycleListener(this), this)
+        } catch (failure: Throwable) {
+            logger.log(Level.WARNING, "pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
+            closePnLibrary()
+        }
+    }
+
+    internal fun closePnLibrary() {
+        val closing = pnLibrary ?: return
+        pnLibrary = null
+        runCatching { closing.close() }
+    }
+
+    private fun isFolia(): Boolean = runCatching {
+        Class.forName("io.papermc.paper.threadedregions.RegionizedServer")
+    }.isSuccess
+
     override fun onDisable() {
+        closePnLibrary()
         runtime?.close()
     }
 

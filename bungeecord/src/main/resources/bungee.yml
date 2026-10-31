@@ -5,3 +5,5 @@ author: privatenull
 description: Extensible authentication and player API for BungeeCord, Velocity, Paper, and Folia.
 depends:
   - packetevents
+softDepends:
+  - pnLibrary
