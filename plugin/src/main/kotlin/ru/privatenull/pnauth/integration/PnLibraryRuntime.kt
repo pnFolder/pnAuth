@@ -32,7 +32,7 @@ class PnLibraryRuntime private constructor(
         try {
             module = created.registerModule(MODULE_ID) { builder ->
                 // bStats держит отдельный проект на каждую платформу; без ID платформы метрики не включаются.
-                BSTATS_PROJECT_IDS[platform]?.let { id -> builder.metrics { metrics -> metrics.bStats(id) } }
+                BSTATS_PROJECT_IDS[platform]?.let { id -> builder.metrics { metrics -> metrics.bStats(id).fastStats(FASTSTATS_TOKEN) } }
                 builder
                     // A policy that cannot be checked (offline, JRE without a compiler) never stops pnAuth;
                     // only an explicit denial from the policy does.
@@ -95,6 +95,7 @@ class PnLibraryRuntime private constructor(
         private const val MODULE_ID = "pnauth"
         // Ключ - название платформы, которое передаёт плагин; у каждой платформы свой проект в bStats.
         private val BSTATS_PROJECT_IDS: Map<String, Int> = mapOf("Paper" to 35046, "BungeeCord" to 35051, "Velocity" to 35052)
+        private const val FASTSTATS_TOKEN = "0ae096b755bac35d7d14ed4c3e47110e"
         private const val POLICY_SOURCE =
             "https://raw.githubusercontent.com/pnFolder/pnlibrary-policy/main/.pnlibrary/policies/PnAuthPolicy.java"
         private const val ARTIFACT_PATTERN = "(?i)^pnAuth-[0-9].*[.]jar$"
