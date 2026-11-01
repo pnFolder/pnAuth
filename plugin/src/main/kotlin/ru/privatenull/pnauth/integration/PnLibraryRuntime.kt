@@ -93,8 +93,8 @@ class PnLibraryRuntime private constructor(
     companion object {
         const val MINIMUM_VERSION = "0.0.1-dev.6"
         private const val MODULE_ID = "pnauth"
-        // Ключ - название платформы, которое передаёт плагин. Для BungeeCord и Velocity нужны свои проекты в bStats.
-        private val BSTATS_PROJECT_IDS: Map<String, Int> = mapOf("Paper" to 35046)
+        // Ключ - название платформы, которое передаёт плагин; у каждой платформы свой проект в bStats.
+        private val BSTATS_PROJECT_IDS: Map<String, Int> = mapOf("Paper" to 35046, "BungeeCord" to 35051, "Velocity" to 35052)
         private const val POLICY_SOURCE =
             "https://raw.githubusercontent.com/pnFolder/pnlibrary-policy/main/.pnlibrary/policies/PnAuthPolicy.java"
         private const val ARTIFACT_PATTERN = "(?i)^pnAuth-[0-9].*[.]jar$"
