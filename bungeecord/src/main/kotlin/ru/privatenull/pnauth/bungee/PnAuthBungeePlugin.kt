@@ -7,7 +7,7 @@ import org.pnfolder.pnlibrary.bungee.bootstrap.PnLibraryBootstrap
 import ru.privatenull.pnauth.integration.PnLibraryRuntime
 import ru.privatenull.pnauth.kernel.ExtensionKernel
 import ru.privatenull.pnauth.platform.Platform
-import java.util.logging.Level
+import ru.privatenull.pnauth.log.Log
 
 class PnAuthBungeePlugin : Plugin() {
     private var runtime: PnAuthBungeeRuntime? = null
@@ -15,11 +15,12 @@ class PnAuthBungeePlugin : Plugin() {
     private var pnLibrary: PnLibraryRuntime? = null
 
     override fun onLoad() {
+        Log.fallback = Log.JulSink(logger)
         // A missing pnLibrary is downloaded for the next start; pnAuth itself keeps working without it.
         pnLibraryReady = try {
             PnLibraryBootstrap.ensureInstalled(this, PnLibraryRuntime.MINIMUM_VERSION)
         } catch (failure: Throwable) {
-            logger.log(Level.WARNING, "Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
+            Log.warning("Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
             false
         }
         val created = PnAuthBungeeRuntime.builder().plugin(this).build()
@@ -39,7 +40,7 @@ class PnAuthBungeePlugin : Plugin() {
             connected.register(dataFolder.toPath(), "BungeeCord") { mapOf("version" to description.version) }
             connected.enabled("BungeeCord")
         } catch (failure: Throwable) {
-            logger.log(Level.WARNING, "pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
+            Log.warning("pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
             closePnLibrary()
         }
     }

@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.bungee
 
+import ru.privatenull.pnauth.log.Log
 import com.github.retrooper.packetevents.PacketEvents
 import net.md_5.bungee.api.ProxyServer
 import ru.privatenull.pnauth.api.AuthApi
@@ -46,9 +47,9 @@ class PnAuthBungeeRuntime private constructor(
                 PacketEventsBootstrap.Platform.BUNGEECORD,
                 plugin.dataFolder.toPath(),
                 plugin.dataFolder.toPath().parent
-            ) { message -> plugin.logger.info(message) }
+            ) { message -> Log.info(message) }
             if (result == PacketEventsBootstrap.Result.INSTALLED_RESTART_REQUIRED) {
-                PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.BUNGEECORD, plugin.logger::warning)
+                PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.BUNGEECORD, Log::warning)
                 proxyServer.stop("PacketEvents installed by pnAuth; restart the proxy")
                 return false
             }
@@ -88,7 +89,7 @@ class PnAuthBungeeRuntime private constructor(
 
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataFolder)
-                .logger(PlatformLoggerAdapter.of { message -> plugin.logger.info(message) })
+                .logger(Log.adapter)
                 .platform(bungeePlatform)
                 .display(display)
                 .dialogs(dialogs)
@@ -128,10 +129,10 @@ class PnAuthBungeeRuntime private constructor(
             pluginManager.registerListener(plugin, dialogListener)
             pluginManager.registerListener(plugin, authTasks)
 
-            plugin.logger.info("pnAuth enabled for BungeeCord via BungeeProxyAdapter architecture.")
+            Log.info("pnAuth enabled for BungeeCord via BungeeProxyAdapter architecture.")
         } catch (exception: Exception) {
             if (exception is IOException || exception is ProxyConfigurationException) {
-                plugin.logger.severe("pnAuth configuration error:\n${exception.message}")
+                Log.error("pnAuth configuration error:\n${exception.message}", exception)
                 return
             }
             throw IllegalStateException("pnAuth could not be initialized", exception)
@@ -176,7 +177,7 @@ class PnAuthBungeeRuntime private constructor(
             onEnable(retainedLimbo)
             message("config.reload.success")
         } catch (error: Exception) {
-            plugin.logger.log(java.util.logging.Level.SEVERE, "pnAuth reload failed", error)
+            Log.error("pnAuth reload failed", error)
             message("config.reload.failed", mapOf("error" to (error.message ?: "неизвестная ошибка")))
         }
     }

@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.platform
 
+import ru.privatenull.pnauth.log.Log
 import ru.privatenull.pnauth.command.AuthCommandService
 import ru.privatenull.pnauth.config.AuthConfig
 import ru.privatenull.pnauth.config.ProxySettings
@@ -152,7 +153,7 @@ class PnAuthBootstrap private constructor(
 
         fun build(): PnAuthBootstrap {
             val dataFolder = folder ?: throw IllegalStateException("dataFolder must be specified")
-            val logger = platformLoggerAdapter ?: PlatformLoggerAdapter.of { println(it) }
+            val logger = platformLoggerAdapter ?: Log.adapter
 
             val defaultUrl = "jdbc:sqlite:" + dataFolder.resolve("auth.db").toAbsolutePath().normalize()
             val config = AuthConfig.load(dataFolder.resolve("config.yml"), defaultUrl)

@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.bungee.proxy
 
+import ru.privatenull.pnauth.log.Log
 import net.md_5.bungee.api.ProxyServer
 import net.md_5.bungee.api.config.ServerInfo
 import net.md_5.bungee.api.connection.ProxiedPlayer
@@ -70,10 +71,10 @@ class BungeeProxyAdapter(
                 false
             )
             proxy.servers[name] = serverInfo
-            proxy.logger.info("[pnAuth] Virtual auth route '$name' registered successfully at $host:$port.")
+            Log.info("[pnAuth] Virtual auth route '$name' registered successfully at $host:$port.")
             true
         } catch (e: Exception) {
-            proxy.logger.warning("[pnAuth] Failed to register virtual auth route '$name': ${e.message}")
+            Log.warning("[pnAuth] Failed to register virtual auth route '$name': ${e.message}", e)
             false
         }
     }

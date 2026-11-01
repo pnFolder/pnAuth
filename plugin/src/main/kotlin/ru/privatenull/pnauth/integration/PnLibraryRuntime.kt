@@ -2,6 +2,7 @@ package ru.privatenull.pnauth.integration
 
 import org.pnfolder.pnlibrary.api.diagnostics.DiagnosticConfiguration
 import org.pnfolder.pnlibrary.api.diagnostics.DiagnosticContainer
+import org.pnfolder.pnlibrary.api.logging.PnLogger
 import org.pnfolder.pnlibrary.api.plugin.ModuleContext
 import org.pnfolder.pnlibrary.api.plugin.PluginRegistration
 import org.pnfolder.pnlibrary.api.remote.PolicyErrorAction
@@ -10,6 +11,7 @@ import org.pnfolder.pnlibrary.api.runtime.PnLibrary
 import org.pnfolder.pnlibrary.api.runtime.PnLibraryIdentity
 import org.pnfolder.pnlibrary.api.runtime.PnLibraryProvider
 import org.pnfolder.pnlibrary.api.updates.UpdateChannel
+import ru.privatenull.pnauth.log.Log
 import java.nio.file.Path
 import java.util.function.Supplier
 
@@ -62,6 +64,7 @@ class PnLibraryRuntime private constructor(
                             .artifact(ARTIFACT_PATTERN, 17)
                     }
             }
+            module?.logger?.let { logger -> Log.attach(moduleSink(logger)) }
         } catch (failure: RuntimeException) {
             closeRegistration()
             throw failure
@@ -78,6 +81,7 @@ class PnLibraryRuntime private constructor(
     override fun close() {
         val closing = module
         module = null
+        Log.attach(null)
         if (closing != null && !closing.isClosed) {
             runCatching { closing.lifecycle.disabled().show() }
         }
@@ -88,6 +92,13 @@ class PnLibraryRuntime private constructor(
         val closing = registration
         registration = null
         if (closing != null && !closing.isClosed) closing.close()
+    }
+
+    private fun moduleSink(logger: PnLogger): Log.Sink = object : Log.Sink {
+        override fun info(message: String) = logger.info(message)
+        override fun success(message: String) = logger.success(message)
+        override fun warning(message: String) = logger.warning(message)
+        override fun error(message: String, error: Throwable?) = logger.error(message, error)
     }
 
     companion object {

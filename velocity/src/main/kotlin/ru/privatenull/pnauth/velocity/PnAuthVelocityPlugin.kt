@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.velocity
 
+import ru.privatenull.pnauth.log.Log
 import com.google.inject.Inject
 import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.connection.DisconnectEvent
@@ -36,10 +37,11 @@ class PnAuthVelocityPlugin @Inject constructor(
     @Subscribe
     fun onProxyInitialization(event: ProxyInitializeEvent) {
         // A missing pnLibrary is downloaded for the next start; pnAuth itself keeps working without it.
+        Log.fallback = Slf4jSink(logger)
         val pnLibraryReady = try {
             PnLibraryBootstrap.ensureInstalled(proxy, this, PnLibraryRuntime.MINIMUM_VERSION)
         } catch (failure: Throwable) {
-            logger.warn("Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
+            Log.warning("Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
             false
         }
         val created = PnAuthVelocityRuntime.builder()
@@ -60,7 +62,7 @@ class PnAuthVelocityPlugin @Inject constructor(
             connected.register(dataDirectory, "Velocity") { mapOf("version" to PnAuthBuild.VERSION) }
             connected.enabled("Velocity")
         } catch (failure: Throwable) {
-            logger.warn("pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
+            Log.warning("pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
             closePnLibrary()
         }
     }

@@ -8,7 +8,7 @@ import ru.privatenull.pnauth.platform.Platform
 import org.pnfolder.pnlibrary.bukkit.bootstrap.PnLibraryBootstrap
 import ru.privatenull.pnauth.dependency.PacketEventsBootstrap
 import ru.privatenull.pnauth.integration.PnLibraryRuntime
-import java.util.logging.Level
+import ru.privatenull.pnauth.log.Log
 
 /** Paper/Folia bootstrap. All reusable behavior remains in the shared module. */
 class PnAuthPaperPlugin : JavaPlugin() {
@@ -18,20 +18,21 @@ class PnAuthPaperPlugin : JavaPlugin() {
     private var pnLibrary: PnLibraryRuntime? = null
 
     override fun onLoad() {
+        Log.fallback = Log.JulSink(logger)
         // pnAuth keeps protecting the server even when pnLibrary cannot be prepared; only the shared services go missing.
         pnLibraryReady = try {
             PnLibraryBootstrap.ensureInstalled(this, PnLibraryRuntime.MINIMUM_VERSION)
         } catch (failure: Throwable) {
-            logger.log(Level.WARNING, "Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
+            Log.warning("Не удалось подготовить pnLibrary; pnAuth работает без обновлений и диагностики.", failure)
             false
         }
         val result = PacketEventsBootstrap.ensure(
             PacketEventsBootstrap.Platform.PAPER,
             dataFolder.toPath(),
             dataFolder.toPath().parent
-        ) { message -> logger.info(message) }
+        ) { message -> Log.info(message) }
         if (result == PacketEventsBootstrap.Result.INSTALLED_RESTART_REQUIRED) {
-            PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.PAPER, logger::warning)
+            PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.PAPER, Log::warning)
             Bukkit.shutdown()
             return
         }
@@ -62,7 +63,7 @@ class PnAuthPaperPlugin : JavaPlugin() {
             connected.enabled("Paper")
             server.pluginManager.registerEvents(PnLibraryLifecycleListener(this), this)
         } catch (failure: Throwable) {
-            logger.log(Level.WARNING, "pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
+            Log.warning("pnLibrary не подключена к pnAuth; плагин работает без неё.", failure)
             closePnLibrary()
         }
     }

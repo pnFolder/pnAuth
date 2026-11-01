@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.velocity
 
+import ru.privatenull.pnauth.log.Log
 import com.github.retrooper.packetevents.PacketEvents
 import com.velocitypowered.api.event.connection.DisconnectEvent
 import com.velocitypowered.api.proxy.ProxyServer
@@ -51,10 +52,10 @@ class PnAuthVelocityRuntime private constructor(
                 PacketEventsBootstrap.Platform.VELOCITY,
                 dataDirectory,
                 dataDirectory.parent,
-                logger::info
+                Log::info
             )
             if (dependency == PacketEventsBootstrap.Result.INSTALLED_RESTART_REQUIRED) {
-                PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.VELOCITY, logger::warn)
+                PacketEventsBootstrap.logRestartNotice(PacketEventsBootstrap.Platform.VELOCITY, Log::warning)
                 proxy.shutdown(Component.text("PacketEvents installed by pnAuth; restart the proxy"))
                 return
             }
@@ -83,7 +84,7 @@ class PnAuthVelocityRuntime private constructor(
 
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataDirectory)
-                .logger(PlatformLoggerAdapter.of { message -> logger.info(message) })
+                .logger(Log.adapter)
                 .platform(vPlatform)
                 .display(display)
                 .dialogs(pDialogs)
@@ -125,14 +126,14 @@ class PnAuthVelocityRuntime private constructor(
             proxy.eventManager.register(owner, tasks)
         } catch (exception: Exception) {
             if (exception is IOException || exception is ProxyConfigurationException) {
-                logger.error("pnAuth configuration error:\n${exception.message}")
+                Log.error("pnAuth configuration error:\n${exception.message}", exception)
                 return
             }
-            logger.error("pnAuth could not be initialized", exception)
+            Log.error("pnAuth could not be initialized", exception)
             throw IllegalStateException("pnAuth could not be initialized", exception)
         }
 
-        logger.info("pnAuth enabled for Velocity via VelocityProxyAdapter architecture.")
+        Log.info("pnAuth enabled for Velocity via VelocityProxyAdapter architecture.")
     }
 
     fun onDisconnect(event: DisconnectEvent) {
@@ -170,7 +171,7 @@ class PnAuthVelocityRuntime private constructor(
             onProxyInitialization(retainedLimbo)
             message("config.reload.success")
         } catch (error: Exception) {
-            logger.error("pnAuth reload failed", error)
+            Log.error("pnAuth reload failed", error)
             message("config.reload.failed", mapOf("error" to (error.message ?: "неизвестная ошибка")))
         }
     }

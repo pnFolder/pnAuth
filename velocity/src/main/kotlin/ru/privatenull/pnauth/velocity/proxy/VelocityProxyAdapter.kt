@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.velocity.proxy
 
+import ru.privatenull.pnauth.log.Log
 import com.velocitypowered.api.proxy.ProxyServer
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier
 import com.velocitypowered.api.proxy.server.RegisteredServer
@@ -70,10 +71,10 @@ class VelocityProxyAdapter(
             val serverInfo = ServerInfo(name, InetSocketAddress(host, port))
             val registered = proxy.registerServer(serverInfo)
             registeredLimboServers[name] = registered
-            logger.info("Virtual auth route '$name' registered successfully at $host:$port.")
+            Log.info("Virtual auth route '$name' registered successfully at $host:$port.")
             true
         } catch (e: Exception) {
-            logger.warn("Failed to register virtual auth route '$name': ${e.message}")
+            Log.warning("Failed to register virtual auth route '$name': ${e.message}", e)
             false
         }
     }

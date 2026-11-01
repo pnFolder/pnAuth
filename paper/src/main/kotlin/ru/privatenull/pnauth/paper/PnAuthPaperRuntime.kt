@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.paper
 
+import ru.privatenull.pnauth.log.Log
 import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -57,7 +58,7 @@ class PnAuthPaperRuntime private constructor(
             display = paperDisplay
             val paperDialogs = PacketEventsPlayerDialogs(
                 Function { uniqueId: UUID -> plugin.server.getPlayer(uniqueId) }
-            ) { message -> plugin.logger.warning(message) }
+            ) { message -> Log.warning(message) }
             dialogs = paperDialogs
             val paperPlatform = PaperPlatform(plugin, paperDisplay, paperDialogs, config.messageFormat)
             platform = paperPlatform
@@ -74,7 +75,7 @@ class PnAuthPaperRuntime private constructor(
 
             val boot = PnAuthBootstrap.builder()
                 .dataFolder(dataFolder)
-                .logger(PlatformLoggerAdapter.of { message -> plugin.logger.info(message) })
+                .logger(Log.adapter)
                 .platform(paperPlatform)
                 .display(paperDisplay)
                 .dialogs(paperDialogs)
@@ -114,7 +115,7 @@ class PnAuthPaperRuntime private constructor(
             accessListener = access
             plugin.server.pluginManager.registerEvents(access, plugin)
 
-            plugin.logger.info("pnAuth enabled for ${paperPlatform.type()}.")
+            Log.info("pnAuth enabled for ${paperPlatform.type()}.")
         } catch (exception: Exception) {
             throw IllegalStateException("pnAuth could not be initialized", exception)
         }
@@ -155,7 +156,7 @@ class PnAuthPaperRuntime private constructor(
             onEnable()
             requireNotNull(runtimeMessages).text("config.reload.success")
         } catch (error: Exception) {
-            plugin.logger.log(java.util.logging.Level.SEVERE, "pnAuth reload failed", error)
+            Log.error("pnAuth reload failed", error)
             (runtimeMessages ?: messagesBeforeReload)?.text(
                 "config.reload.failed", mapOf("error" to (error.message ?: "неизвестная ошибка"))
             ) ?: "Не удалось применить конфигурацию pnAuth."
@@ -203,7 +204,7 @@ class PnAuthPaperRuntime private constructor(
         if (settings == null || !settings.teleportEnabled) return
         val world = plugin.server.getWorld(settings.world)
         if (world == null) {
-            plugin.logger.warning("Paper authentication world is not loaded: " + settings.world)
+            Log.warning("Paper authentication world is not loaded: " + settings.world)
             return
         }
         val target = Location(
@@ -236,7 +237,7 @@ class PnAuthPaperRuntime private constructor(
         }
         if (target == null) {
             if (settings.successDestination != PaperSettings.SuccessDestination.NONE) {
-                plugin.logger.warning("Paper success teleport destination is unavailable for ${player.name}.")
+                Log.warning("Paper success teleport destination is unavailable for ${player.name}.")
             }
             return
         }

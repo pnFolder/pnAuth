@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.config
 
+import ru.privatenull.pnauth.log.Log
 import net.elytrium.serializer.custom.ClassSerializer
 import ru.privatenull.pnauth.message.MessageFormat
 
@@ -13,7 +14,7 @@ class MessageFormatSerializer : ClassSerializer<MessageFormat, String>(
     override fun deserialize(value: String): MessageFormat = try {
         MessageFormat.parse(value)
     } catch (_: IllegalArgumentException) {
-        System.err.println(
+        Log.warning(
             "[pnAuth] Некорректное значение messages.format: '$value'. " +
                 "Используется безопасное значение MINI_MESSAGE. Допустимо: LEGACY, MINI_MESSAGE, JSON, PLAIN."
         )

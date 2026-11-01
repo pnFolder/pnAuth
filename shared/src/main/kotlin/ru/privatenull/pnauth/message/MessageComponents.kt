@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.message
 
+import ru.privatenull.pnauth.log.Log
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.minimessage.tag.Tag
@@ -58,7 +59,7 @@ object MessageComponents {
             }
         } catch (exception: RuntimeException) {
             if (source.contains("<auth:", ignoreCase = true)) {
-                System.err.println("[pnAuth] Не удалось разобрать действие в сообщении: ${exception.message}")
+                Log.warning("[pnAuth] Не удалось разобрать действие в сообщении: ${exception.message}", exception)
             }
             // Ошибка в пользовательском шаблоне не должна ломать обработчик события прокси.
             Component.text(MessageRenderers.toLegacy(source, format))

@@ -1,5 +1,6 @@
 package ru.privatenull.pnauth.bungee
 
+import ru.privatenull.pnauth.log.Log
 import net.kyori.adventure.text.Component
 import net.md_5.bungee.api.CommandSender
 import net.md_5.bungee.api.chat.BaseComponent
@@ -212,8 +213,9 @@ class BungeeDialogListener internal constructor(
             try {
                 show(player, status == AuthStatus.UNREGISTERED)
             } catch (exception: RuntimeException) {
-                plugin.logger.warning(
-                    "Could not show Bungee dialog for ${player.name}; falling back to commands: ${exception.message}"
+                Log.warning(
+                    "Could not show Bungee dialog for ${player.name}; falling back to commands: ${exception.message}",
+                    exception
                 )
                 sendCommandFallback(player, status, protocol, true)
             }
