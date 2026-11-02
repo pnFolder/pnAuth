@@ -1,5 +1,29 @@
 {
   "schema": 1,
   "product": "pnauth",
-  "releases": []
+  "releases": [
+    {
+      "version": "1.2.3",
+      "channel": "stable",
+      "description": "Подключение к pnLibrary 0.0.1-dev.6: обновления, диагностика, метрики и единый журнал.",
+      "changelogUrl": "https://github.com/PnFolder/pnAuth/blob/main/.pnlibrary/changelogs/1.2.3.md",
+      "publishedAt": "2026-11-02T15:35:05Z",
+      "api": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "artifacts": [
+        {
+          "file": "pnAuth-1.2.3-universal-java17.jar",
+          "platform": "UNIVERSAL",
+          "java": {
+            "minimum": 17
+          },
+          "url": "https://github.com/PnFolder/pnAuth/releases/download/v1.2.3/pnAuth-1.2.3-universal-java17.jar",
+          "sha256": "18ebb3a8121a68305fdeed7a81dcd85346bc38786290a76dde3593c486e03f65",
+          "size": 35161894
+        }
+      ]
+    }
+  ]
 }
