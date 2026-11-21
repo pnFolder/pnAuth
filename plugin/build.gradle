@@ -4,7 +4,7 @@ plugins {
 }
 
 def pluginVersion = version.toString()
-def pnLibraryVersion = '0.0.1-dev.6'
+def pnLibraryVersion = '0.1.0-dev.6'
 def generatedSources = layout.buildDirectory.dir('generated/sources/pnauth')
 configurations.runtimeClasspath {
     // PacketEvents is a required external plugin and owns Adventure on BungeeCord.
