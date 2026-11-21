@@ -102,7 +102,7 @@ class PnLibraryRuntime private constructor(
     }
 
     companion object {
-        const val MINIMUM_VERSION = "0.0.1-dev.6"
+        const val MINIMUM_VERSION = "0.1.0-dev.6"
         private const val MODULE_ID = "pnauth"
         // Ключ - название платформы, которое передаёт плагин; у каждой платформы свой проект в bStats.
         private val BSTATS_PROJECT_IDS: Map<String, Int> = mapOf("Paper" to 35046, "BungeeCord" to 35051, "Velocity" to 35052)
