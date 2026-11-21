@@ -3,6 +3,29 @@
   "product": "pnauth",
   "releases": [
     {
+      "version": "1.3.0",
+      "channel": "stable",
+      "description": "Переход на pnLibrary 0.1.0-dev.6 (API 2): нужна новая библиотека.",
+      "changelogUrl": "https://github.com/PnFolder/pnAuth/blob/main/.pnlibrary/changelogs/1.3.0.md",
+      "publishedAt": "2026-11-21T15:59:40Z",
+      "api": {
+        "minimum": 2,
+        "maximum": 2
+      },
+      "artifacts": [
+        {
+          "file": "pnAuth-1.3.0-universal-java17.jar",
+          "platform": "UNIVERSAL",
+          "java": {
+            "minimum": 17
+          },
+          "url": "https://github.com/PnFolder/pnAuth/releases/download/v1.3.0/pnAuth-1.3.0-universal-java17.jar",
+          "sha256": "dd7303d5342a63abdd01b787bdf0d91bcc1f1bec99852729417ea433932cb918",
+          "size": 35162101
+        }
+      ]
+    },
+    {
       "version": "1.2.3",
       "channel": "stable",
       "description": "Подключение к pnLibrary 0.0.1-dev.6: обновления, диагностика, метрики и единый журнал.",
